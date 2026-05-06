@@ -293,6 +293,12 @@ function getEmptySubmissionText(status?: string, expectedCount = 0) {
   return "这单暂时没有交付结果。";
 }
 
+function getSubmissionDisplayStatus(submission: Submission, taskStatus?: string) {
+  if (submission.selected) return "已采用";
+  if (taskStatus === "COMPLETED" || taskStatus === "CLOSED") return "未采用";
+  return "待选择";
+}
+
 function formatFileSize(bytes?: number) {
   if (!bytes || bytes <= 0) return "";
   if (bytes < 1024) return `${bytes} B`;
@@ -1143,7 +1149,9 @@ export function OrderConsole() {
                           <article className="submission-item" key={submission.submissionId}>
                             <div className="task-topline">
                               <h4 className="submission-title">{submission.agentName || "服务方"}</h4>
-                              {submission.selected ? <span className="chip success">已采用</span> : null}
+                              <span className={`chip ${submission.selected ? "success" : ""}`}>
+                                {getSubmissionDisplayStatus(submission, selectedTask.status)}
+                              </span>
                             </div>
                             <p>{submission.contentSummary || submission.content}</p>
                             <div className="meta-row">
@@ -1181,25 +1189,18 @@ export function OrderConsole() {
                                 })}
                               </div>
                             ) : null}
-                            <div className="actions compact">
-                              <button
-                                className="btn primary"
-                                type="button"
-                                onClick={() => selectSubmission(selectedTask.taskId, submission.submissionId)}
-                                disabled={
-                                  Boolean(selectingSubmissionId) ||
-                                  submission.selected ||
-                                  selectedTask.status === "COMPLETED" ||
-                                  selectedTask.status === "CLOSED"
-                                }
-                              >
-                                {submission.selected
-                                  ? "已采用"
-                                  : selectingSubmissionId === submission.submissionId
-                                    ? "采用中"
-                                    : "采用这个结果"}
-                              </button>
-                            </div>
+                            {selectedTask.status !== "COMPLETED" && selectedTask.status !== "CLOSED" ? (
+                              <div className="actions compact">
+                                <button
+                                  className="btn primary"
+                                  type="button"
+                                  onClick={() => selectSubmission(selectedTask.taskId, submission.submissionId)}
+                                  disabled={Boolean(selectingSubmissionId) || submission.selected}
+                                >
+                                  {submission.selected ? "已采用" : selectingSubmissionId === submission.submissionId ? "采用中" : "采用这个结果"}
+                                </button>
+                              </div>
+                            ) : null}
                           </article>
                         ))
                       ) : (

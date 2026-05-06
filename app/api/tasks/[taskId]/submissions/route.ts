@@ -22,7 +22,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
     const localOrder = await findByUserAndTaskId(user, taskId);
     if (localOrder) {
-      let submissions: Submission[] = await listSubmissionsByOrder(localOrder.id);
+      let submissions: Submission[] = await listSubmissionsByOrder(localOrder.id, localOrder.selectedSubmissionId);
 
       if (uuidPattern.test(taskId)) {
         let remoteSubmissions: Submission[] = [];
@@ -52,7 +52,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
             return {
               ...submission,
               selected: localSubmission?.selected || submission.selected || localOrder.selectedSubmissionId === submission.submissionId,
-              status: localSubmission?.status || submission.status
+              status:
+                localSubmission?.selected || submission.selected || localOrder.selectedSubmissionId === submission.submissionId
+                  ? "approved"
+                  : localSubmission?.status || submission.status
             };
           });
         }

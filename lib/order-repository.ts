@@ -121,6 +121,8 @@ type OrderRow = {
 };
 
 type SubmissionRow = {
+  id?: string;
+  order_id?: string;
   caichong_submission_id: string;
   agent_id: string | null;
   agent_name: string | null;
@@ -128,6 +130,12 @@ type SubmissionRow = {
   status: string | null;
   selected: boolean | null;
   created_at: string | null;
+  submission_attachments?: {
+    file_url: string;
+    file_name: string | null;
+    file_size: number | null;
+    mime_type: string | null;
+  }[];
 };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -394,7 +402,9 @@ export async function upsertSubmission(input: UpsertSubmissionInput) {
   }
 
   const supabase = createSupabaseServiceClient();
-  const { error } = await supabase.from("submissions").upsert(
+  const { data, error } = await supabase
+    .from("submissions")
+    .upsert(
     {
       order_id: input.orderId,
       caichong_submission_id: input.submission.submissionId,
@@ -407,18 +417,108 @@ export async function upsertSubmission(input: UpsertSubmissionInput) {
     {
       onConflict: "caichong_submission_id"
     }
-  );
+    )
+    .select("id")
+    .single();
 
   if (error) {
     throw new Error(`保存投稿失败：${error.message}`);
   }
+
+  if (data?.id && input.submission.attachments?.length) {
+    await replaceSubmissionAttachments(data.id, input.submission.attachments);
+  }
 }
 
-export async function listSubmissionsByOrder(orderId: string) {
+async function replaceSubmissionAttachments(submissionId: string, attachments: Attachment[]) {
+  const supabase = createSupabaseServiceClient();
+  const { error: deleteError } = await supabase.from("submission_attachments").delete().eq("submission_id", submissionId);
+
+  if (deleteError) {
+    if (deleteError.code === "42P01") {
+      return;
+    }
+
+    throw new Error(`清理投稿附件失败：${deleteError.message}`);
+  }
+
+  const { error: insertError } = await supabase.from("submission_attachments").insert(
+    attachments.map((attachment) => ({
+      submission_id: submissionId,
+      file_url: attachment.fileUrl,
+      file_name: attachment.fileName,
+      file_size: attachment.fileSize,
+      mime_type: attachment.mimeType
+    }))
+  );
+
+  if (insertError && insertError.code !== "42P01") {
+    throw new Error(`保存投稿附件失败：${insertError.message}`);
+  }
+}
+
+function mapSubmissionRow(row: SubmissionRow, selectedSubmissionId?: string): Submission {
+  const isSelected = Boolean(row.selected || (selectedSubmissionId && row.caichong_submission_id === selectedSubmissionId));
+
+  return {
+    submissionId: row.caichong_submission_id,
+    agentId: row.agent_id || undefined,
+    agentName: row.agent_name || undefined,
+    content: row.content,
+    status: isSelected ? "approved" : row.status || undefined,
+    selected: isSelected,
+    createdAt: row.created_at || undefined,
+    attachments:
+      row.submission_attachments?.map((attachment) => ({
+        fileUrl: attachment.file_url,
+        fileName: attachment.file_name || undefined,
+        fileSize: attachment.file_size || undefined,
+        mimeType: attachment.mime_type || undefined
+      })) || []
+  };
+}
+
+export async function listSubmissionsByOrder(orderId: string, selectedSubmissionId?: string) {
   if (!isOrderRepositoryEnabled()) {
     return [];
   }
 
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("submissions")
+    .select(
+      `
+      id,
+      caichong_submission_id,
+      agent_id,
+      agent_name,
+      content,
+      status,
+      selected,
+      created_at,
+      submission_attachments (
+        file_url,
+        file_name,
+        file_size,
+        mime_type
+      )
+    `
+    )
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    if (error.code === "PGRST200" || error.code === "42P01") {
+      return listSubmissionsByOrderWithoutAttachments(orderId, selectedSubmissionId);
+    }
+
+    throw new Error(`读取本地投稿失败：${error.message}`);
+  }
+
+  return ((data || []) as SubmissionRow[]).map((row) => mapSubmissionRow(row, selectedSubmissionId));
+}
+
+async function listSubmissionsByOrderWithoutAttachments(orderId: string, selectedSubmissionId?: string) {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("submissions")
@@ -430,15 +530,7 @@ export async function listSubmissionsByOrder(orderId: string) {
     throw new Error(`读取本地投稿失败：${error.message}`);
   }
 
-  return ((data || []) as SubmissionRow[]).map((row) => ({
-    submissionId: row.caichong_submission_id,
-    agentId: row.agent_id || undefined,
-    agentName: row.agent_name || undefined,
-    content: row.content,
-    status: row.status || undefined,
-    selected: row.selected || false,
-    createdAt: row.created_at || undefined
-  }));
+  return ((data || []) as SubmissionRow[]).map((row) => mapSubmissionRow(row, selectedSubmissionId));
 }
 
 export async function findSubmissionByOrder(orderId: string, submissionId: string) {
@@ -446,6 +538,47 @@ export async function findSubmissionByOrder(orderId: string, submissionId: strin
     return null;
   }
 
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("submissions")
+    .select(
+      `
+      id,
+      caichong_submission_id,
+      agent_id,
+      agent_name,
+      content,
+      status,
+      selected,
+      created_at,
+      submission_attachments (
+        file_url,
+        file_name,
+        file_size,
+        mime_type
+      )
+    `
+    )
+    .eq("order_id", orderId)
+    .eq("caichong_submission_id", submissionId)
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === "PGRST200" || error.code === "42P01") {
+      return findSubmissionByOrderWithoutAttachments(orderId, submissionId);
+    }
+
+    throw new Error(`读取投稿详情失败：${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return mapSubmissionRow(data as SubmissionRow);
+}
+
+async function findSubmissionByOrderWithoutAttachments(orderId: string, submissionId: string) {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("submissions")
@@ -458,20 +591,7 @@ export async function findSubmissionByOrder(orderId: string, submissionId: strin
     throw new Error(`读取投稿详情失败：${error.message}`);
   }
 
-  if (!data) {
-    return null;
-  }
-
-  const row = data as SubmissionRow;
-  return {
-    submissionId: row.caichong_submission_id,
-    agentId: row.agent_id || undefined,
-    agentName: row.agent_name || undefined,
-    content: row.content,
-    status: row.status || undefined,
-    selected: row.selected || false,
-    createdAt: row.created_at || undefined
-  };
+  return data ? mapSubmissionRow(data as SubmissionRow) : null;
 }
 
 export async function markSelectedSubmission(orderId: string, submissionId: string) {
