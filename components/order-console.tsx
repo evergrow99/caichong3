@@ -385,6 +385,23 @@ export function OrderConsole() {
   const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
 
+  function updateSelectedTask(taskId: string | null) {
+    setSelectedTaskId(taskId);
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const nextUrl = new URL(window.location.href);
+    if (taskId) {
+      nextUrl.searchParams.set("task", taskId);
+    } else {
+      nextUrl.searchParams.delete("task");
+    }
+
+    window.history.replaceState(null, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+  }
+
   async function loadTasks() {
     setIsLoading(true);
     setError(null);
@@ -640,7 +657,6 @@ export function OrderConsole() {
       setCurrentUser(user);
       setMessage(null);
       setIsLoginOpen(false);
-      setSelectedTaskId(null);
       await loadTasks();
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "登录失败");
@@ -654,7 +670,7 @@ export function OrderConsole() {
       method: "POST"
     });
     setCurrentUser(null);
-    setSelectedTaskId(null);
+    updateSelectedTask(null);
     setSelectedTask(null);
     setSubmissions([]);
     await loadCurrentUser();
@@ -740,7 +756,7 @@ export function OrderConsole() {
       setMessage(task.paymentUrl ? "任务已创建，请在订单详情中完成付款。" : "任务已创建，请到任务列表查看进展。");
       setDescription("");
       setAttachments([]);
-      setSelectedTaskId(task.taskId);
+      updateSelectedTask(task.taskId);
       await loadTasks();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "发单失败");
@@ -754,6 +770,13 @@ export function OrderConsole() {
     loadCurrentUser();
     loadConfigHealth();
     loadTasks();
+  }, []);
+
+  useEffect(() => {
+    const taskIdFromUrl = new URLSearchParams(window.location.search).get("task");
+    if (taskIdFromUrl) {
+      setSelectedTaskId(taskIdFromUrl);
+    }
   }, []);
 
   useEffect(() => {
@@ -828,7 +851,7 @@ export function OrderConsole() {
             className={!selectedTaskId ? "active" : ""}
             type="button"
             onClick={() => {
-              setSelectedTaskId(null);
+              updateSelectedTask(null);
               setIsMenuOpen(false);
             }}
           >
@@ -869,7 +892,7 @@ export function OrderConsole() {
                   className={`sidebar-task ${selectedTaskId === task.taskId ? "active" : ""}`}
                   key={task.taskId}
                   onClick={() => {
-                    setSelectedTaskId(task.taskId);
+                    updateSelectedTask(task.taskId);
                     setIsMenuOpen(false);
                   }}
                   type="button"
