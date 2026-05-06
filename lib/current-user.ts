@@ -16,6 +16,10 @@ const mockUser: CurrentUser = {
 };
 
 function uuidFromPhone(phone: string) {
+  if (phone === mockUser.phone) {
+    return mockUser.id;
+  }
+
   const digits = phone.replace(/\D/g, "").padStart(12, "0").slice(-12);
   return `00000000-0000-4000-8000-${digits}`;
 }

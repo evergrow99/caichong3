@@ -25,8 +25,16 @@ export async function GET(_request: Request, { params }: RouteContext) {
       let submissions: Submission[] = await listSubmissionsByOrder(localOrder.id);
 
       if (uuidPattern.test(taskId)) {
-        const taskService = await getTaskService(user);
-        const remoteSubmissions = normalizeSubmissions(await taskService.service.getSubmissions(taskId));
+        let remoteSubmissions: Submission[] = [];
+
+        try {
+          const taskService = await getTaskService(user);
+          remoteSubmissions = normalizeSubmissions(await taskService.service.getSubmissions(taskId));
+        } catch (remoteError) {
+          if (submissions.length === 0) {
+            throw remoteError;
+          }
+        }
 
         if (remoteSubmissions.length > 0) {
           const localSubmissionsById = new Map(submissions.map((submission) => [submission.submissionId, submission]));
