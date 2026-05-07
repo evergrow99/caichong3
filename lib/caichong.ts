@@ -20,6 +20,7 @@ export type PublishTask = {
   status: "PENDING_PAYMENT" | "ACTIVE" | "PENDING_SELECTION" | "COMPLETED" | "CLOSED" | string;
   createdAt?: string;
   paidAt?: string;
+  updatedAt?: string;
   deadlineAt?: string;
   paymentUrl?: string;
   attachments?: Attachment[];
@@ -140,6 +141,7 @@ function normalizeTask(task: RawTask): PublishTask {
     taskId: task.taskId || task.id || "",
     price: Number(task.price || 0),
     paidAt: task.paidAt || undefined,
+    updatedAt: task.updatedAt || undefined,
     deadlineAt: task.deadlineAt || task.deadline || undefined,
     submissionCount: task.submissionCount ?? task._count?.submissions ?? 0
   };

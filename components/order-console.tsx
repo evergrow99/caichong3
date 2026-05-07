@@ -287,7 +287,7 @@ function getEmptySubmissionText(status?: string, expectedCount = 0) {
   if (status === "PENDING_PAYMENT") return "这单还没有付款，所以暂时不会开始处理。";
   if (status === "ACTIVE" && expectedCount > 0) return "订单显示已有结果，但暂时没读到详情。请点“刷新”再试。";
   if (status === "ACTIVE") return "任务已经进行中，但还没有收到交付结果。可以稍后点“刷新”。";
-  if (status === "PENDING_SELECTION") return "订单已进入选择期，但暂时没有读到结果。请点“刷新”再试。";
+  if (status === "PENDING_SELECTION") return "订单已进入选择期，请在选择期结束前采用一份投稿。";
   if (status === "COMPLETED") return "这单已经完成，当前没有可继续选择的结果。";
   if (status === "CLOSED") return "这单已经关闭，当前没有可处理的结果。";
   return "这单暂时没有交付结果。";
@@ -314,6 +314,25 @@ function formatDateTimeToMinute(value?: string) {
     minute: "2-digit",
     hour12: false
   });
+}
+
+function addHoursToDateTime(value: string | undefined, hours: number) {
+  if (!value) return "";
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  date.setHours(date.getHours() + hours);
+  return date.toISOString();
+}
+
+function getCloseReasonLabel(reason?: string) {
+  if (reason === "TIMEOUT_NO_PAYMENT") return "创建后 24 小时未付款，订单已关闭";
+  if (reason === "TIMEOUT_NO_SUBMISSION") return "提交期内无人投稿，订单已关闭并退款";
+  if (reason === "TIMEOUT_NO_SELECTION") return "选择期内未采用投稿，订单已关闭并退款";
+  return reason || "";
 }
 
 function formatFileSize(bytes?: number) {
@@ -1237,10 +1256,28 @@ export function OrderConsole() {
                         {selectedTask.attachments?.length ? <span className="chip">附件 {selectedTask.attachments.length}</span> : null}
                       </div>
                       <div className="time-row">
-                        {selectedTask.paidAt || selectedTask.createdAt ? (
+                        {selectedTask.status === "PENDING_PAYMENT" && selectedTask.createdAt ? (
+                          <>
+                            <span>创建时间 {formatDateTimeToMinute(selectedTask.createdAt)}</span>
+                            <span>付款截止 {formatDateTimeToMinute(addHoursToDateTime(selectedTask.createdAt, 24))}</span>
+                            <span>支付链接有效 30 分钟，可刷新</span>
+                          </>
+                        ) : null}
+                        {selectedTask.status === "ACTIVE" && (selectedTask.paidAt || selectedTask.createdAt) ? (
                           <span>发布时间 {formatDateTimeToMinute(selectedTask.paidAt || selectedTask.createdAt)}</span>
                         ) : null}
-                        {selectedTask.deadlineAt ? <span>提交期结束 {formatDateTimeToMinute(selectedTask.deadlineAt)}</span> : null}
+                        {selectedTask.status === "ACTIVE" && selectedTask.deadlineAt ? (
+                          <span>提交期结束 {formatDateTimeToMinute(selectedTask.deadlineAt)}</span>
+                        ) : null}
+                        {selectedTask.status === "PENDING_SELECTION" && selectedTask.deadlineAt ? (
+                          <span>选择期结束 {formatDateTimeToMinute(selectedTask.deadlineAt)}</span>
+                        ) : null}
+                        {selectedTask.status === "COMPLETED" && selectedTask.updatedAt ? (
+                          <span>完成时间 {formatDateTimeToMinute(selectedTask.updatedAt)}</span>
+                        ) : null}
+                        {selectedTask.status === "CLOSED" && selectedTask.closeReason ? (
+                          <span>{getCloseReasonLabel(selectedTask.closeReason)}</span>
+                        ) : null}
                       </div>
 
                       {selectedTask.paymentUrl && selectedTask.status === "PENDING_PAYMENT" ? (
