@@ -335,6 +335,10 @@ function getDisplayTaskDescription(description: string) {
     .replace("这是平台联调使用的小额测试任务。", "这是一条小额测试任务。");
 }
 
+function isSyncableTask(task: PublishTask) {
+  return ["PENDING_PAYMENT", "ACTIVE", "PENDING_SELECTION"].includes(task.status);
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   const data = await response.json();
   if (!response.ok) {
@@ -388,6 +392,7 @@ export function OrderConsole() {
   const selectedTaskStep = getTaskStep(selectedTask?.status);
   const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
+  const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
 
   function updateSelectedTask(taskId: string | null) {
     setSelectedTaskId(taskId);
@@ -825,6 +830,18 @@ export function OrderConsole() {
       setSubmissions([]);
     }
   }, [selectedTaskId]);
+
+  useEffect(() => {
+    if (!isPhoneLoggedIn || !hasCurrentUserSyncableTasks) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void syncHeartbeat();
+    }, 30 * 60 * 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isPhoneLoggedIn, hasCurrentUserSyncableTasks, selectedTaskId]);
 
   useEffect(() => {
     function closeFloatingMenus(event: MouseEvent) {

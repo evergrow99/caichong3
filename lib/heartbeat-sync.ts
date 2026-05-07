@@ -189,9 +189,19 @@ export async function syncPlatformHeartbeat(): Promise<SyncResult> {
   const taskService = createPlatformTaskService();
   const ackedEventIds: number[] = [];
   const messages: string[] = [];
+  const syncableOrders = await listSyncableOrders();
   let page = 1;
   let totalPages = 1;
   let checkedEvents = 0;
+
+  if (syncableOrders.length === 0) {
+    return {
+      source: taskService.source,
+      checkedEvents,
+      ackedEventIds,
+      messages: ["没有进行中的订单，本次自动同步已跳过"]
+    };
+  }
 
   while (page <= totalPages) {
     const data = await taskService.service.listEvents({ page, pageSize: 50 });
@@ -212,7 +222,7 @@ export async function syncPlatformHeartbeat(): Promise<SyncResult> {
   }
 
   if (taskService.source === "caichong") {
-    const refreshMessages = await refreshOrders(await listSyncableOrders(), taskService);
+    const refreshMessages = await refreshOrders(syncableOrders, taskService);
     messages.push(...refreshMessages);
   }
 
