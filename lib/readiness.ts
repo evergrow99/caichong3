@@ -29,10 +29,18 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
   const hasAdminPhones = Boolean(process.env.ADMIN_PHONES?.split(",").map((phone) => phone.trim()).filter(Boolean).length);
   const hasCronSecret = Boolean(process.env.CRON_SECRET);
   const devLoginSafe = process.env.NODE_ENV !== "production" || process.env.ALLOW_DEV_LOGIN !== "true";
-  const hasRealSmsLogin = Boolean(process.env.AUTH_SMS_PROVIDER || process.env.SUPABASE_AUTH_PHONE_ENABLED === "true");
+  const hasRealSmsLogin = Boolean(
+    (process.env.AUTH_SMS_PROVIDER === "aliyun" &&
+      process.env.ALIYUN_SMS_ACCESS_KEY_ID &&
+      process.env.ALIYUN_SMS_ACCESS_KEY_SECRET &&
+      process.env.ALIYUN_SMS_SIGN_NAME &&
+      process.env.ALIYUN_SMS_TEMPLATE_CODE) ||
+      process.env.SUPABASE_AUTH_PHONE_ENABLED === "true"
+  );
   const supabaseReady = hasSupabaseServiceConfig();
   const coreTablesReady = supabaseReady && (await checkSupabaseTable("orders"));
   const operationLogsReady = supabaseReady && (await checkSupabaseTable("operation_logs"));
+  const smsTableReady = supabaseReady && (await checkSupabaseTable("sms_verifications"));
 
   const items: ReadinessItem[] = [
     {
@@ -87,9 +95,12 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
     {
       key: "real_sms_login",
       label: "真实短信登录",
-      ok: hasRealSmsLogin,
-      detail: hasRealSmsLogin ? "已标记真实短信登录可用。" : "还没有接入真实短信验证码，暂时不能对外开放真实用户注册登录。",
-      action: "申请短信服务后，接入 /api/auth/send-code 和 /api/auth/verify-code，并配置 AUTH_SMS_PROVIDER。"
+      ok: Boolean(hasRealSmsLogin && smsTableReady),
+      detail:
+        hasRealSmsLogin && smsTableReady
+          ? "已配置真实短信服务和验证码表。"
+          : "还没有完整接入真实短信验证码，暂时不能对外开放真实用户注册登录。",
+      action: "配置 AUTH_SMS_PROVIDER=aliyun、阿里云短信环境变量，并执行 supabase/migrations/0004_sms_verifications.sql。"
     }
   ];
 

@@ -346,7 +346,7 @@ export function OrderConsole() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("10");
   const [loginPhone, setLoginPhone] = useState("");
-  const [loginCode, setLoginCode] = useState("123456");
+  const [loginCode, setLoginCode] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [tasks, setTasks] = useState<PublishTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -363,6 +363,8 @@ export function OrderConsole() {
   const [isRefreshingPayment, setIsRefreshingPayment] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [codeCooldown, setCodeCooldown] = useState(0);
   const [uploadProgressText, setUploadProgressText] = useState<string | null>(null);
   const [selectingSubmissionId, setSelectingSubmissionId] = useState<string | null>(null);
   const [previewByAttachmentUrl, setPreviewByAttachmentUrl] = useState<Record<string, string>>({});
@@ -378,6 +380,7 @@ export function OrderConsole() {
   const filterMenuRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const canLogin = isPhoneValid(loginPhone) && isCodeValid(loginCode) && !isLoggingIn;
+  const canSendCode = isPhoneValid(loginPhone) && !isSendingCode && codeCooldown === 0;
   const isPhoneLoggedIn = currentUser?.authMode === "phone";
   const isPublishDisabled = !isPhoneLoggedIn || isCreating;
   const descriptionLength = description.trim().length;
@@ -624,7 +627,38 @@ export function OrderConsole() {
     }
   }
 
-  async function loginWithDevPhone(event: FormEvent<HTMLFormElement>) {
+  async function sendLoginCode() {
+    if (!isPhoneValid(loginPhone)) {
+      setError("请输入 11 位中国大陆手机号");
+      return;
+    }
+
+    setIsSendingCode(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      await readJson<{ ok: boolean; message?: string }>(
+        await fetch("/api/auth/send-code", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json; charset=utf-8"
+          },
+          body: JSON.stringify({
+            phone: loginPhone
+          })
+        })
+      );
+      setMessage("验证码已发送，请查看短信。");
+      setCodeCooldown(60);
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : "验证码发送失败");
+    } finally {
+      setIsSendingCode(false);
+    }
+  }
+
+  async function loginWithPhoneCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!isPhoneValid(loginPhone)) {
       setError("请输入 11 位中国大陆手机号");
@@ -642,7 +676,7 @@ export function OrderConsole() {
 
     try {
       const user = await readJson<CurrentUser>(
-        await fetch("/api/auth/dev-login", {
+        await fetch("/api/auth/verify-code", {
           method: "POST",
           headers: {
             "Content-Type": "application/json; charset=utf-8"
@@ -805,6 +839,15 @@ export function OrderConsole() {
     document.addEventListener("mousedown", closeFloatingMenus);
     return () => document.removeEventListener("mousedown", closeFloatingMenus);
   }, []);
+
+  useEffect(() => {
+    if (codeCooldown <= 0) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setCodeCooldown((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [codeCooldown]);
 
   return (
     <main className={`studio-shell ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -969,7 +1012,7 @@ export function OrderConsole() {
                 ×
               </button>
             </div>
-            <form className="modal-login-form" onSubmit={loginWithDevPhone}>
+            <form className="modal-login-form" onSubmit={loginWithPhoneCode}>
               <label>
                 手机号
                 <input
@@ -984,15 +1027,20 @@ export function OrderConsole() {
               </label>
               <label>
                 验证码
-                <input
-                  aria-label="验证码"
-                  maxLength={6}
-                  inputMode="numeric"
-                  placeholder="请输入验证码"
-                  value={loginCode}
-                  onChange={(event) => setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  required
-                />
+                <span className="code-input-row">
+                  <input
+                    aria-label="验证码"
+                    maxLength={6}
+                    inputMode="numeric"
+                    placeholder="请输入验证码"
+                    value={loginCode}
+                    onChange={(event) => setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                    required
+                  />
+                  <button type="button" onClick={sendLoginCode} disabled={!canSendCode}>
+                    {isSendingCode ? "发送中" : codeCooldown > 0 ? `${codeCooldown}s` : "获取验证码"}
+                  </button>
+                </span>
               </label>
               <button className="btn primary" disabled={!canLogin} type="submit">
                 {isLoggingIn ? "登录中" : "登录"}
