@@ -299,6 +299,23 @@ function getSubmissionDisplayStatus(submission: Submission, taskStatus?: string)
   return "待选择";
 }
 
+function formatDateTimeToMinute(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+}
+
 function formatFileSize(bytes?: number) {
   if (!bytes || bytes <= 0) return "";
   if (bytes < 1024) return `${bytes} B`;
@@ -381,6 +398,7 @@ export function OrderConsole() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isSubmissionsCollapsed, setIsSubmissionsCollapsed] = useState(false);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const filterMenuRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1216,8 +1234,13 @@ export function OrderConsole() {
                       <div className="meta-row">
                         <span className="chip">{getStatusLabel(selectedTask.status)}</span>
                         <span className="chip">{selectedTask.submissionCount || 0} 接单</span>
-                        {selectedTask.deadlineAt ? <span className="chip">截止 {selectedTask.deadlineAt}</span> : null}
                         {selectedTask.attachments?.length ? <span className="chip">附件 {selectedTask.attachments.length}</span> : null}
+                      </div>
+                      <div className="time-row">
+                        {selectedTask.paidAt || selectedTask.createdAt ? (
+                          <span>发布时间 {formatDateTimeToMinute(selectedTask.paidAt || selectedTask.createdAt)}</span>
+                        ) : null}
+                        {selectedTask.deadlineAt ? <span>提交期结束 {formatDateTimeToMinute(selectedTask.deadlineAt)}</span> : null}
                       </div>
 
                       {selectedTask.paymentUrl && selectedTask.status === "PENDING_PAYMENT" ? (
@@ -1232,22 +1255,25 @@ export function OrderConsole() {
 
                     <div className="submissions submission-section">
                       <div className="detail-header">
-                        <h3>交付结果</h3>
-                        <span className="chip">{submissions.length} 条</span>
+                        <h3>收到投稿</h3>
+                        <div className="header-actions">
+                          <span className="chip">{submissions.length} 条</span>
+                          <button type="button" onClick={() => setIsSubmissionsCollapsed((value) => !value)}>
+                            {isSubmissionsCollapsed ? "展开" : "收起"}
+                          </button>
+                        </div>
                       </div>
 
-                      {submissions.length > 0 ? (
+                      {isSubmissionsCollapsed ? null : submissions.length > 0 ? (
                         submissions.map((submission) => (
                           <article className="submission-item" key={submission.submissionId}>
                             <div className="task-topline">
                               <h4 className="submission-title">{submission.agentName || "服务方"}</h4>
-                              <span className={`chip ${submission.selected ? "success" : ""}`}>
-                                {getSubmissionDisplayStatus(submission, selectedTask.status)}
-                              </span>
+                              {submission.selected ? <span className="chip success">已采用</span> : null}
                             </div>
                             <p>{submission.contentSummary || submission.content}</p>
                             <div className="meta-row">
-                              {submission.createdAt ? <span className="chip">提交 {submission.createdAt}</span> : null}
+                              {submission.createdAt ? <span className="chip">投稿时间 {formatDateTimeToMinute(submission.createdAt)}</span> : null}
                               {submission.attachments?.length ? <span className="chip">附件 {submission.attachments.length}</span> : null}
                             </div>
                             {submission.attachments?.length ? (
@@ -1289,7 +1315,7 @@ export function OrderConsole() {
                                   onClick={() => selectSubmission(selectedTask.taskId, submission.submissionId)}
                                   disabled={Boolean(selectingSubmissionId) || submission.selected}
                                 >
-                                  {submission.selected ? "已采用" : selectingSubmissionId === submission.submissionId ? "采用中" : "采用这个结果"}
+                                  {submission.selected ? "已采用" : selectingSubmissionId === submission.submissionId ? "采用中" : "采用投稿"}
                                 </button>
                               </div>
                             ) : null}

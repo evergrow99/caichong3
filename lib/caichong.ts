@@ -19,6 +19,7 @@ export type PublishTask = {
   price: number;
   status: "PENDING_PAYMENT" | "ACTIVE" | "PENDING_SELECTION" | "COMPLETED" | "CLOSED" | string;
   createdAt?: string;
+  paidAt?: string;
   deadlineAt?: string;
   paymentUrl?: string;
   attachments?: Attachment[];
@@ -87,6 +88,7 @@ const DEFAULT_BASE_URL = "https://main-api.caichong.net";
 type RawTask = PublishTask & {
   id?: string;
   deadline?: string | null;
+  paidAt?: string | null;
   price?: number | string;
   _count?: {
     submissions?: number;
@@ -137,6 +139,7 @@ function normalizeTask(task: RawTask): PublishTask {
     ...task,
     taskId: task.taskId || task.id || "",
     price: Number(task.price || 0),
+    paidAt: task.paidAt || undefined,
     deadlineAt: task.deadlineAt || task.deadline || undefined,
     submissionCount: task.submissionCount ?? task._count?.submissions ?? 0
   };

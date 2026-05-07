@@ -138,7 +138,7 @@ type SubmissionRow = {
   }[];
 };
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const orderSelect = `
   id,
@@ -446,6 +446,27 @@ export async function upsertSubmission(input: UpsertSubmissionInput) {
 
   if (data?.id && input.submission.attachments?.length) {
     await replaceSubmissionAttachments(data.id, input.submission.attachments);
+  }
+
+  const { count, error: countError } = await supabase
+    .from("submissions")
+    .select("id", { count: "exact", head: true })
+    .eq("order_id", input.orderId);
+
+  if (countError) {
+    throw new Error(`统计投稿数量失败：${countError.message}`);
+  }
+
+  const { error: orderError } = await supabase
+    .from("orders")
+    .update({
+      submission_count: count || 0,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", input.orderId);
+
+  if (orderError) {
+    throw new Error(`更新订单投稿数量失败：${orderError.message}`);
   }
 }
 
