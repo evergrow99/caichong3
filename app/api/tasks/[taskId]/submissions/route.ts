@@ -31,9 +31,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
           const taskService = await getTaskService(user);
           remoteSubmissions = normalizeSubmissions(await taskService.service.getSubmissions(taskId));
         } catch (remoteError) {
-          if (submissions.length === 0) {
-            throw remoteError;
-          }
+          console.warn(`读取远程交付结果失败，使用本地结果兜底：${getErrorMessage(remoteError)}`);
         }
 
         if (remoteSubmissions.length > 0) {

@@ -330,6 +330,7 @@ function isTextLikeAttachment(fileName?: string, contentType = "") {
 
 function getDisplayTaskDescription(description: string) {
   return description
+    .replace(/^真实接口联调测试：?/, "")
     .replace(/^真实接口测试订单：?/, "测试任务：")
     .replace("这是平台联调使用的小额测试任务。", "这是一条小额测试任务。");
 }
@@ -447,13 +448,16 @@ export function OrderConsole() {
     setError(null);
 
     try {
-      const [task, submissionData] = await Promise.all([
-        readJson<PublishTask>(await fetch(`/api/tasks/${taskId}`)),
-        readJson<{ submissions?: Submission[] } | Submission[]>(await fetch(`/api/tasks/${taskId}/submissions`))
-      ]);
-
+      const task = await readJson<PublishTask>(await fetch(`/api/tasks/${taskId}`));
       setSelectedTask(task);
-      setSubmissions(Array.isArray(submissionData) ? submissionData : submissionData.submissions || []);
+
+      try {
+        const submissionData = await readJson<{ submissions?: Submission[] } | Submission[]>(await fetch(`/api/tasks/${taskId}/submissions`));
+        setSubmissions(Array.isArray(submissionData) ? submissionData : submissionData.submissions || []);
+      } catch {
+        setSubmissions([]);
+      }
+
       setLastRefreshAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
     } catch (detailError) {
       setError(detailError instanceof Error ? detailError.message : "订单详情读取失败");

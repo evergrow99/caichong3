@@ -222,7 +222,14 @@ export function createCaichongClient(options: CaichongClientOptions = {}) {
   return {
     async createTask(input: PublishTaskInput) {
       const task = await trpcMutation<RawTask>("publish_task.create", input, options);
-      return normalizeTask(task);
+      const normalizedTask = normalizeTask(task);
+
+      return {
+        ...normalizedTask,
+        description: normalizedTask.description || input.description,
+        price: normalizedTask.price || input.price,
+        attachments: normalizedTask.attachments?.length ? normalizedTask.attachments : input.attachments
+      };
     },
     async listTasks(input: { page?: number; pageSize?: number } = {}) {
       const data = await trpcQuery<{

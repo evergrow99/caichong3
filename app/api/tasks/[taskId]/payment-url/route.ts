@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
-import { findByUserAndTaskId } from "@/lib/order-repository";
+import { findByUserAndTaskId, updateOrderPaymentUrl } from "@/lib/order-repository";
 import { getTaskService } from "@/lib/task-service";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -20,6 +20,10 @@ export async function POST(_request: Request, { params }: RouteContext) {
     }
 
     const data = await taskService.service.getPaymentUrl(taskId);
+    if (data.paymentUrl) {
+      await updateOrderPaymentUrl(localOrder.id, data.paymentUrl);
+    }
+
     return NextResponse.json(data);
   } catch (error) {
     const message = getErrorMessage(error, "刷新付款入口失败");

@@ -375,6 +375,25 @@ export async function updateFromCaichongTask(orderId: string, task: PublishTask)
   return task;
 }
 
+export async function updateOrderPaymentUrl(orderId: string, paymentUrl: string) {
+  if (!isOrderRepositoryEnabled()) {
+    return;
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("orders")
+    .update({
+      payment_url: paymentUrl,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", orderId);
+
+  if (error) {
+    throw new Error(`保存付款入口失败：${error.message}`);
+  }
+}
+
 export async function updateOrderStatusByTaskId(taskId: string, status: string, patch: Partial<Pick<PublishTask, "deadlineAt" | "closeReason">> = {}) {
   if (!isOrderRepositoryEnabled()) {
     return;
