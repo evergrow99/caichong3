@@ -1131,7 +1131,6 @@ export function OrderConsole() {
                 ) : null}
 
                 {uploadProgressText ? <div className="message neutral">{uploadProgressText}</div> : null}
-                {message ? <div className="message ok">{message}</div> : null}
                 {error ? <div className="message error">{error}</div> : null}
               </div>
             </form>
