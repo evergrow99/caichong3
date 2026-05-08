@@ -3,6 +3,7 @@ export type Attachment = {
   fileName?: string;
   fileSize?: number;
   mimeType?: string;
+  fileType?: string;
 };
 
 export type UploadAttachmentResult = Attachment;
@@ -159,7 +160,8 @@ function normalizeAttachments(attachments?: RawAttachment[]) {
         fileUrl,
         fileName: attachment.fileName,
         fileSize: attachment.fileSize,
-        mimeType: attachment.mimeType || attachment.fileType
+        mimeType: attachment.mimeType || attachment.fileType,
+        fileType: attachment.fileType || attachment.mimeType
       };
     })
     .filter((attachment): attachment is Attachment => Boolean(attachment));
@@ -188,7 +190,18 @@ function normalizeAttachment(payload: unknown, fallback: Omit<Attachment, "fileU
     fileUrl,
     fileName: typeof data?.fileName === "string" ? data.fileName : fallback.fileName,
     fileSize: typeof data?.fileSize === "number" ? data.fileSize : fallback.fileSize,
-    mimeType: typeof data?.mimeType === "string" ? data.mimeType : fallback.mimeType
+    mimeType: typeof data?.mimeType === "string" ? data.mimeType : fallback.mimeType,
+    fileType: typeof data?.fileType === "string" ? data.fileType : typeof data?.mimeType === "string" ? data.mimeType : fallback.mimeType
+  };
+}
+
+function toPublishAttachment(attachment: Attachment) {
+  const fileType = attachment.fileType || attachment.mimeType || "application/octet-stream";
+
+  return {
+    ...attachment,
+    mimeType: attachment.mimeType || fileType,
+    fileType
   };
 }
 
@@ -226,7 +239,14 @@ async function trpcMutation<T>(endpoint: string, input: Record<string, unknown> 
 export function createCaichongClient(options: CaichongClientOptions = {}) {
   return {
     async createTask(input: PublishTaskInput) {
-      const task = await trpcMutation<RawTask>("publish_task.create", input, options);
+      const task = await trpcMutation<RawTask>(
+        "publish_task.create",
+        {
+          ...input,
+          attachments: input.attachments?.map(toPublishAttachment)
+        },
+        options
+      );
       const normalizedTask = normalizeTask(task);
 
       return {
