@@ -4,6 +4,7 @@ import { findByUserAndTaskId, findSubmissionByOrder, markSelectedSubmission } fr
 import { getTaskService } from "@/lib/task-service";
 import { getErrorMessage } from "@/lib/errors";
 import { recordOperationLog } from "@/lib/operation-log";
+import { canSelectSubmission } from "@/lib/task-rules";
 
 type RouteContext = {
   params: Promise<{ taskId: string }>;
@@ -27,8 +28,8 @@ export async function POST(request: Request, { params }: RouteContext) {
       return NextResponse.json({ error: "订单不存在，或你没有权限处理这条订单" }, { status: 404 });
     }
 
-    if (localOrder.status === "COMPLETED" || localOrder.status === "CLOSED") {
-      return NextResponse.json({ error: "这条订单已经结束，不能再次采用结果" }, { status: 400 });
+    if (!canSelectSubmission(localOrder)) {
+      return NextResponse.json({ error: "当前阶段不能采用投稿，请先刷新订单状态后再试。" }, { status: 400 });
     }
 
     const localSubmission = await findSubmissionByOrder(localOrder.id, submissionId);

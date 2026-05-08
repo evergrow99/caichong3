@@ -3,6 +3,14 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { PublishTask, Submission } from "@/lib/caichong";
+import {
+  canSelectSubmission,
+  getCloseReasonLabel,
+  getEmptySubmissionText,
+  getTaskStatusLabel,
+  getTaskStep,
+  isSyncableTaskStatus
+} from "@/lib/task-rules";
 
 type PendingAttachment = {
   file: File;
@@ -47,14 +55,6 @@ const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const MIN_DESCRIPTION_LENGTH = 10;
 const isPhoneValid = (phone: string) => /^1\d{10}$/.test(phone);
 const isCodeValid = (code: string) => /^\d{6}$/.test(code);
-
-const statusLabels: Record<string, string> = {
-  PENDING_PAYMENT: "待支付",
-  ACTIVE: "提交期",
-  PENDING_SELECTION: "选择期",
-  COMPLETED: "已完成",
-  CLOSED: "已关闭"
-};
 
 const taskFilters: { key: TaskFilter; label: string }[] = [
   { key: "all", label: "全部" },
@@ -242,63 +242,6 @@ function Icon({ name }: { name: IconName }) {
   );
 }
 
-function getStatusLabel(status?: string) {
-  if (!status) return "未知状态";
-  return statusLabels[status] || status;
-}
-
-function getStatusGuidance(status?: string, submissionCount = 0) {
-  if (status === "PENDING_PAYMENT") return "下一步：完成付款。付款后点“刷新”，任务会进入处理中。";
-  if (status === "ACTIVE" && submissionCount > 0) return "已经收到交付结果。请查看下方内容，确认满意后采用一个结果完成任务。";
-  if (status === "ACTIVE") return "任务正在处理中。可以隔一段时间点“刷新”查看新结果。";
-  if (status === "PENDING_SELECTION") return "已经可以处理交付结果了。请阅读结果后采用一份，任务会完成结算。";
-  if (status === "COMPLETED") return "这单已经完成结算，后续只需要保留记录。";
-  if (status === "CLOSED") return "这单已经关闭，不能继续付款或采用结果。";
-  return "订单状态已记录，可以刷新详情或任务进展确认最新状态。";
-}
-
-function getTaskNextAction(task: PublishTask) {
-  if (task.status === "PENDING_PAYMENT") return "待付款";
-  if (task.status === "ACTIVE") return "提交期";
-  if (task.status === "PENDING_SELECTION") return "选择期";
-  if (task.status === "COMPLETED") return "已结算";
-  if (task.status === "CLOSED") return "已关闭";
-  return "待确认";
-}
-
-function getTaskStep(status?: string) {
-  if (status === "PENDING_PAYMENT") return 2;
-  if (status === "ACTIVE" || status === "PENDING_SELECTION") return 3;
-  if (status === "COMPLETED" || status === "CLOSED") return 4;
-  return 1;
-}
-
-function getPrimaryDetailAction(status?: string, submissionCount = 0) {
-  if (status === "PENDING_PAYMENT") return "请先完成付款";
-  if (status === "ACTIVE" && submissionCount > 0) return "查看交付结果";
-  if (status === "ACTIVE") return "等待交付结果";
-  if (status === "PENDING_SELECTION") return "选择满意结果";
-  if (status === "COMPLETED") return "任务已完成";
-  if (status === "CLOSED") return "任务已关闭";
-  return "查看任务进展";
-}
-
-function getEmptySubmissionText(status?: string, expectedCount = 0) {
-  if (status === "PENDING_PAYMENT") return "这单还没有付款，所以暂时不会开始处理。";
-  if (status === "ACTIVE" && expectedCount > 0) return "订单显示已有结果，但暂时没读到详情。请点“刷新”再试。";
-  if (status === "ACTIVE") return "任务已经进行中，但还没有收到交付结果。可以稍后点“刷新”。";
-  if (status === "PENDING_SELECTION") return "订单已进入选择期，请在选择期结束前采用一份投稿。";
-  if (status === "COMPLETED") return "这单已经完成，当前没有可继续选择的结果。";
-  if (status === "CLOSED") return "这单已经关闭，当前没有可处理的结果。";
-  return "这单暂时没有交付结果。";
-}
-
-function getSubmissionDisplayStatus(submission: Submission, taskStatus?: string) {
-  if (submission.selected) return "已采用";
-  if (taskStatus === "COMPLETED" || taskStatus === "CLOSED") return "未采用";
-  return "待选择";
-}
-
 function formatDateTimeToMinute(value?: string) {
   if (!value) return "";
   const date = new Date(value);
@@ -326,13 +269,6 @@ function addHoursToDateTime(value: string | undefined, hours: number) {
 
   date.setHours(date.getHours() + hours);
   return date.toISOString();
-}
-
-function getCloseReasonLabel(reason?: string) {
-  if (reason === "TIMEOUT_NO_PAYMENT") return "创建后 24 小时未付款，订单已关闭";
-  if (reason === "TIMEOUT_NO_SUBMISSION") return "提交期内无人投稿，订单已关闭并退款";
-  if (reason === "TIMEOUT_NO_SELECTION") return "选择期内未采用投稿，订单已关闭并退款";
-  return reason || "";
 }
 
 function formatFileSize(bytes?: number) {
@@ -372,7 +308,7 @@ function getDisplayTaskDescription(description: string) {
 }
 
 function isSyncableTask(task: PublishTask) {
-  return ["PENDING_PAYMENT", "ACTIVE", "PENDING_SELECTION"].includes(task.status);
+  return isSyncableTaskStatus(task.status);
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -1000,7 +936,7 @@ export function OrderConsole() {
                 >
                   <span className="sidebar-task-title">{getDisplayTaskDescription(task.description)}</span>
                   <span className="sidebar-task-meta">
-                    <span>{getStatusLabel(task.status)}</span>
+                    <span>{getTaskStatusLabel(task.status)}</span>
                     <span>{task.submissionCount || 0}接单</span>
                   </span>
                 </button>
@@ -1251,7 +1187,7 @@ export function OrderConsole() {
                         <span className="money">¥{selectedTask.price}</span>
                       </div>
                       <div className="meta-row">
-                        <span className="chip">{getStatusLabel(selectedTask.status)}</span>
+                        <span className="chip">{getTaskStatusLabel(selectedTask.status)}</span>
                         <span className="chip">{selectedTask.submissionCount || 0} 接单</span>
                         {selectedTask.attachments?.length ? <span className="chip">附件 {selectedTask.attachments.length}</span> : null}
                       </div>
@@ -1344,7 +1280,7 @@ export function OrderConsole() {
                                 })}
                               </div>
                             ) : null}
-                            {selectedTask.status !== "COMPLETED" && selectedTask.status !== "CLOSED" ? (
+                            {canSelectSubmission(selectedTask) ? (
                               <div className="actions compact">
                                 <button
                                   className="btn primary"

@@ -6,30 +6,19 @@ import { syncPlatformHeartbeat } from "@/lib/heartbeat-sync";
 import { listOperationLogs } from "@/lib/operation-log";
 import { getReadinessReport } from "@/lib/readiness";
 import { listAdminOrders } from "@/lib/order-repository";
-
-const statusLabels: Record<string, string> = {
-  PENDING_PAYMENT: "待支付",
-  ACTIVE: "进行中",
-  PENDING_SELECTION: "待选择",
-  COMPLETED: "已完成",
-  CLOSED: "已关闭"
-};
-
-function getStatusLabel(status: string) {
-  return statusLabels[status] || status;
-}
+import { getTaskStatusLabel, taskStatusRules } from "@/lib/task-rules";
 
 function getOrderAction(order: { status: string; submissionCount: number }) {
   if (order.status === "PENDING_PAYMENT") {
-    return "等待用户完成支付";
+    return "等待用户付款；创建后 24 小时未付款会关闭";
   }
 
   if (order.status === "ACTIVE" && order.submissionCount > 0) {
-    return "已有投稿，建议查看结果";
+    return "提交期已有投稿，可以提前采用";
   }
 
   if (order.status === "PENDING_SELECTION") {
-    return "已进入选择期，需要选中投稿";
+    return "选择期内需要采用投稿";
   }
 
   return "";
@@ -167,7 +156,7 @@ export default async function AdminPage() {
                   <span>ID {order.caichongTaskId}</span>
                 </div>
                 <div className="action-order-meta">
-                  <span className="chip">{getStatusLabel(order.status)}</span>
+                  <span className="chip">{getTaskStatusLabel(order.status)}</span>
                   <span className="chip">投稿 {order.submissionCount}</span>
                   <span className="chip">¥{order.price.toFixed(2)}</span>
                 </div>
@@ -211,7 +200,7 @@ export default async function AdminPage() {
                       {order.userDisplayName ? <span>{order.userDisplayName}</span> : null}
                     </td>
                     <td>
-                      <span className="chip">{getStatusLabel(order.status)}</span>
+                      <span className="chip">{getTaskStatusLabel(order.status)}</span>
                     </td>
                     <td>¥{order.price.toFixed(2)}</td>
                     <td>{order.submissionCount}</td>
@@ -223,6 +212,27 @@ export default async function AdminPage() {
           ) : (
             <div className="empty-state">还没有订单数据。</div>
           )}
+        </div>
+      </section>
+
+      <section className="panel admin-panel">
+        <div className="panel-header">
+          <h2>状态规则对照</h2>
+          <p>按才虫公开规则整理，前台展示、采用投稿、自动刷新都应以这里为准。</p>
+        </div>
+
+        <div className="readiness-grid status-rule-grid">
+          {taskStatusRules.map((rule) => (
+            <article className="readiness-item" key={rule.status}>
+              <div className="readiness-title">
+                <strong>{rule.label}</strong>
+                <span>{rule.isTerminal ? "终态" : "可同步"}</span>
+              </div>
+              <p>{rule.userMeaning}</p>
+              <small>{rule.timeRule}</small>
+              <small>{rule.userAction}</small>
+            </article>
+          ))}
         </div>
       </section>
 

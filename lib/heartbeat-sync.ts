@@ -96,7 +96,6 @@ async function handleEvent(event: AgentEvent, taskService: TaskService, findOrde
           })
         )
       );
-      await updateOrderStatusByTaskId(taskId, "PENDING_SELECTION");
     }
 
     messages.push(`任务 ${taskId} 收到 ${submissions.length} 条投稿`);
