@@ -69,7 +69,7 @@ export function mapTaskToLocalOrder(input: CreateLocalOrderInput): LocalOrder {
     caichongTaskId: input.task.taskId,
     description: input.task.description,
     price: input.task.price,
-    status: input.task.status,
+    status: input.task.status || "PENDING_PAYMENT",
     paymentUrl: input.task.paymentUrl,
     deadlineAt: input.task.deadlineAt,
     closeReason: input.task.closeReason,
@@ -360,7 +360,7 @@ export async function updateFromCaichongTask(orderId: string, task: PublishTask)
   const { error } = await supabase
     .from("orders")
     .update({
-      status: task.status,
+      status: task.status || "PENDING_PAYMENT",
       payment_url: task.paymentUrl,
       close_reason: task.closeReason,
       submission_count: task.submissionCount || 0,

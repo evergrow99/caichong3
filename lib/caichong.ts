@@ -141,6 +141,7 @@ function normalizeTask(task: RawTask): PublishTask {
     ...task,
     taskId: task.taskId || task.id || "",
     price: Number(task.price || 0),
+    status: task.status || "PENDING_PAYMENT",
     paidAt: task.paidAt || undefined,
     updatedAt: task.updatedAt || undefined,
     deadlineAt: task.deadlineAt || task.deadline || undefined,

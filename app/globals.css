@@ -1176,6 +1176,7 @@ label {
   row-gap: 14px;
   align-items: center;
   margin-top: 14px;
+  margin-bottom: 18px;
 }
 
 .attachment-control,
@@ -1934,7 +1935,7 @@ label {
 .attachment-list {
   display: grid;
   gap: 8px;
-  margin: 16px 0 18px;
+  margin: 0 0 18px;
 }
 
 .attachment-list.compact-list {
