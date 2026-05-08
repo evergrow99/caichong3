@@ -707,7 +707,7 @@ export async function createFromCaichongTask(input: CreateLocalOrderInput) {
         caichong_task_id: input.task.taskId,
         description: input.task.description,
         price: input.task.price,
-        status: input.task.status,
+        status: input.task.status || "PENDING_PAYMENT",
         payment_url: input.task.paymentUrl,
         close_reason: input.task.closeReason,
         submission_count: input.task.submissionCount || 0
