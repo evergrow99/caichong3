@@ -340,6 +340,7 @@ export function OrderConsole() {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isRefreshingPayment, setIsRefreshingPayment] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [codeCooldown, setCodeCooldown] = useState(0);
@@ -355,6 +356,8 @@ export function OrderConsole() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isSubmissionsCollapsed, setIsSubmissionsCollapsed] = useState(false);
+  const [pendingPaymentTaskId, setPendingPaymentTaskId] = useState<string | null>(null);
+  const [pendingPaymentUrl, setPendingPaymentUrl] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const filterMenuRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
@@ -393,12 +396,15 @@ export function OrderConsole() {
       const data = await readJson<{ tasks: PublishTask[]; source?: "mock" | "caichong" | "supabase" }>(
         await fetch("/api/tasks?page=1&pageSize=20")
       );
-      setTasks(data.tasks || []);
+      const nextTasks = data.tasks || [];
+      setTasks(nextTasks);
       setDataSource(data.source || "unknown");
       setLastRefreshAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
+      return nextTasks;
 
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "订单读取失败");
+      return [];
     } finally {
       setIsLoading(false);
     }
@@ -612,6 +618,42 @@ export function OrderConsole() {
     }
   }
 
+  async function confirmPaymentComplete() {
+    if (!pendingPaymentTaskId) {
+      return;
+    }
+
+    setIsConfirmingPayment(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      await readJson<{ checkedEvents: number; messages: string[] }>(
+        await fetch("/api/sync/heartbeat", {
+          method: "POST"
+        })
+      );
+
+      const nextTasks = await loadTasks();
+      const paidTask = nextTasks.find((task) => task.taskId === pendingPaymentTaskId && task.status !== "PENDING_PAYMENT");
+
+      if (!paidTask) {
+        setMessage("暂时还没有检测到付款完成，请稍后再试。");
+        return;
+      }
+
+      window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
+      setPendingPaymentTaskId(null);
+      setPendingPaymentUrl(null);
+      setMessage("付款已完成，任务已发布。");
+      updateSelectedTask(paidTask.taskId);
+    } catch (confirmError) {
+      setError(confirmError instanceof Error ? confirmError.message : "付款状态刷新失败");
+    } finally {
+      setIsConfirmingPayment(false);
+    }
+  }
+
   async function sendLoginCode() {
     if (!isPhoneValid(loginPhone)) {
       setError("请输入 11 位中国大陆手机号");
@@ -750,6 +792,14 @@ export function OrderConsole() {
       return;
     }
 
+    let paymentWindow: Window | null = null;
+    try {
+      paymentWindow = window.open("", "_blank");
+      paymentWindow?.document.write("<title>正在打开付款页面</title><p style=\"font-family: sans-serif; padding: 24px;\">正在打开付款页面...</p>");
+    } catch {
+      paymentWindow = null;
+    }
+
     setIsCreating(true);
     setMessage(null);
     setError(null);
@@ -785,13 +835,19 @@ export function OrderConsole() {
       updateSelectedTask(null);
       setSelectedTask(null);
       setSubmissions([]);
-      setMessage("任务已创建，正在打开付款页面。");
+      setPendingPaymentTaskId(task.taskId);
+      setPendingPaymentUrl(paymentUrl);
+      setMessage("任务已创建，付款页面已打开。完成付款后请回到这里查看任务。");
       setDescription("");
       setAttachments([]);
       await loadTasks();
-      await new Promise((resolve) => window.setTimeout(resolve, 350));
-      window.location.assign(paymentUrl);
+      if (paymentWindow) {
+        paymentWindow.location.href = paymentUrl;
+      } else {
+        window.open(paymentUrl, "_blank", "noopener,noreferrer");
+      }
     } catch (createError) {
+      paymentWindow?.close();
       setError(createError instanceof Error ? createError.message : "发单失败");
     } finally {
       setIsCreating(false);
@@ -837,6 +893,8 @@ export function OrderConsole() {
     }
 
     window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
+    setPendingPaymentTaskId(null);
+    setPendingPaymentUrl(null);
     updateSelectedTask(pendingTaskId);
   }, [selectedTaskId, visibleTasks]);
 
@@ -1163,6 +1221,23 @@ export function OrderConsole() {
                         </button>
                       </div>
                     ))}
+                  </div>
+                ) : null}
+
+                {pendingPaymentTaskId && pendingPaymentUrl ? (
+                  <div className="payment-wait-card">
+                    <div>
+                      <strong>请先完成付款</strong>
+                      <span>付款完成后回到这里，刷新状态即可看到任务详情。</span>
+                    </div>
+                    <div className="payment-wait-actions">
+                      <a href={pendingPaymentUrl} target="_blank" rel="noreferrer">
+                        重新打开付款页
+                      </a>
+                      <button type="button" onClick={confirmPaymentComplete} disabled={isConfirmingPayment}>
+                        {isConfirmingPayment ? "刷新中" : "我已完成付款"}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
 
