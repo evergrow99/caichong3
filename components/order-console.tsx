@@ -75,31 +75,31 @@ const taskFilters: { key: TaskFilter; label: string }[] = [
 
 const exampleCases = [
   {
-    type: "文字",
-    title: "小红书护肤文案",
-    request: "为新品面霜写 3 条自然种草内容。",
-    result: "交付可直接发布的标题、正文和标签建议。",
+    type: "品牌设计",
+    title: "咖啡店 Logo 初稿",
+    request: "想要一个适合头像和门店招牌的 Logo，温暖、简洁、有手作感。",
+    result: "收到 3 组方向，可继续挑一版深化。",
     visual: "text"
   },
   {
-    type: "图片",
-    title: "咖啡店海报方向",
-    request: "为周末活动生成一张海报参考。",
-    result: "交付画面描述、风格方向和可复用提示词。",
+    type: "图片参考",
+    title: "新品海报视觉方向",
+    request: "为周末活动做一张海报参考图，适合朋友圈和小红书发布。",
+    result: "收到画面参考、配色和可复用提示词。",
     visual: "image"
   },
   {
-    type: "音乐",
-    title: "短视频背景音乐",
-    request: "需要 15 秒轻快、适合生活方式视频的音乐。",
-    result: "交付节奏说明、情绪关键词和制作建议。",
+    type: "文案",
+    title: "护肤品种草内容",
+    request: "给新品面霜写几条自然一点的小红书文案，不要太像广告。",
+    result: "收到标题、正文、标签和语气建议。",
     visual: "music"
   },
   {
-    type: "视频",
+    type: "脚本",
     title: "产品介绍脚本",
-    request: "为新品做 30 秒视频脚本。",
-    result: "交付分镜、旁白和字幕节奏。",
+    request: "为新品做 30 秒短视频脚本，包含分镜、旁白和字幕节奏。",
+    result: "收到可直接给剪辑参考的脚本结构。",
     visual: "video"
   }
 ];
@@ -109,40 +109,73 @@ function CaseVisual({ type }: { type: string }) {
     <svg className={`case-visual ${type}`} aria-hidden="true" viewBox="0 0 420 180" role="img">
       {type === "text" ? (
         <>
-          <rect x="0" y="0" width="420" height="180" rx="18" />
-          <rect x="28" y="30" width="180" height="16" rx="8" />
-          <rect x="28" y="62" width="300" height="10" rx="5" />
-          <rect x="28" y="86" width="250" height="10" rx="5" />
-          <rect x="28" y="120" width="92" height="28" rx="14" />
-          <rect x="132" y="120" width="78" height="28" rx="14" />
+          <defs>
+            <linearGradient id="case-logo-bg" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stopColor="#fff5df" />
+              <stop offset="100%" stopColor="#d7efe7" />
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="420" height="180" rx="22" fill="url(#case-logo-bg)" />
+          <rect x="38" y="34" width="136" height="112" rx="26" fill="#ffffff" opacity="0.88" />
+          <circle cx="106" cy="90" r="34" fill="#111111" />
+          <path d="M106 64l9 18 20 8-18 9-11 26-11-26-18-9 20-8 9-18z" fill="#ffffff" />
+          <rect x="206" y="48" width="138" height="16" rx="8" fill="#111111" opacity="0.82" />
+          <rect x="206" y="82" width="96" height="10" rx="5" fill="#627067" opacity="0.48" />
+          <rect x="206" y="106" width="132" height="10" rx="5" fill="#627067" opacity="0.34" />
+          <circle cx="340" cy="124" r="18" fill="#ef9f65" opacity="0.86" />
         </>
       ) : null}
       {type === "image" ? (
         <>
-          <rect x="0" y="0" width="420" height="180" rx="18" />
-          <circle cx="318" cy="58" r="28" />
-          <path d="M42 146l76-68 54 45 42-34 78 57H42z" />
-          <rect x="278" y="118" width="90" height="18" rx="9" />
+          <defs>
+            <linearGradient id="case-poster-bg" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stopColor="#f9dfe8" />
+              <stop offset="100%" stopColor="#dbe8ff" />
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="420" height="180" rx="22" fill="url(#case-poster-bg)" />
+          <rect x="34" y="24" width="142" height="132" rx="18" fill="#ffffff" opacity="0.9" />
+          <rect x="58" y="46" width="94" height="14" rx="7" fill="#e84d83" opacity="0.86" />
+          <rect x="58" y="72" width="58" height="58" rx="18" fill="#f5b461" />
+          <circle cx="134" cy="100" r="30" fill="#4967d8" opacity="0.86" />
+          <rect x="210" y="38" width="142" height="96" rx="22" fill="#ffffff" opacity="0.72" />
+          <path d="M230 116l44-44 34 28 26-20 34 36H230z" fill="#2f6f5f" opacity="0.76" />
+          <circle cx="326" cy="62" r="18" fill="#f6c85f" />
         </>
       ) : null}
       {type === "music" ? (
         <>
-          <rect x="0" y="0" width="420" height="180" rx="18" />
-          <path d="M66 96c26-42 54-42 80 0s54 42 80 0 54-42 80 0" />
-          <circle cx="114" cy="116" r="20" />
-          <path d="M134 116V48l82-16v68" />
-          <circle cx="216" cy="100" r="20" />
-          <rect x="282" y="48" width="66" height="84" rx="16" />
+          <defs>
+            <linearGradient id="case-copy-bg" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stopColor="#f7efe3" />
+              <stop offset="100%" stopColor="#ffe7f2" />
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="420" height="180" rx="22" fill="url(#case-copy-bg)" />
+          <rect x="34" y="28" width="352" height="124" rx="24" fill="#ffffff" opacity="0.88" />
+          <rect x="62" y="54" width="142" height="14" rx="7" fill="#111111" opacity="0.82" />
+          <rect x="62" y="84" width="260" height="9" rx="5" fill="#7a6f69" opacity="0.36" />
+          <rect x="62" y="106" width="230" height="9" rx="5" fill="#7a6f69" opacity="0.3" />
+          <rect x="62" y="126" width="72" height="18" rx="9" fill="#ef7aa5" opacity="0.72" />
+          <rect x="146" y="126" width="62" height="18" rx="9" fill="#f0b56f" opacity="0.76" />
+          <path d="M338 52l12 24 26 10-24 12-14 34-14-34-24-12 26-10 12-24z" fill="#7b63d9" opacity="0.82" />
         </>
       ) : null}
       {type === "video" ? (
         <>
-          <rect x="0" y="0" width="420" height="180" rx="18" />
-          <rect x="36" y="34" width="210" height="118" rx="14" />
-          <path d="M126 70l60 34-60 34V70z" />
-          <rect x="272" y="42" width="92" height="18" rx="9" />
-          <rect x="272" y="78" width="70" height="18" rx="9" />
-          <rect x="272" y="114" width="100" height="18" rx="9" />
+          <defs>
+            <linearGradient id="case-video-bg" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stopColor="#e5f4ff" />
+              <stop offset="100%" stopColor="#fff0d6" />
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="420" height="180" rx="22" fill="url(#case-video-bg)" />
+          <rect x="34" y="30" width="164" height="112" rx="22" fill="#111111" opacity="0.86" />
+          <path d="M100 68l54 31-54 31V68z" fill="#ffffff" />
+          <rect x="228" y="36" width="112" height="18" rx="9" fill="#111111" opacity="0.76" />
+          <rect x="228" y="72" width="134" height="12" rx="6" fill="#4d6f8e" opacity="0.56" />
+          <rect x="228" y="100" width="96" height="12" rx="6" fill="#4d6f8e" opacity="0.38" />
+          <rect x="228" y="128" width="120" height="12" rx="6" fill="#4d6f8e" opacity="0.3" />
         </>
       ) : null}
     </svg>
@@ -385,10 +418,11 @@ export function OrderConsole() {
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const filterMenuRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const shouldPublishAfterLoginRef = useRef(false);
   const canLogin = isPhoneValid(loginPhone) && isCodeValid(loginCode) && !isLoggingIn;
   const canSendCode = isPhoneValid(loginPhone) && !isSendingCode && codeCooldown === 0;
   const isPhoneLoggedIn = currentUser?.authMode === "phone";
-  const isPublishDisabled = !isPhoneLoggedIn || isCreating;
+  const isPublishDisabled = isCreating || description.trim().length === 0;
   const descriptionLength = description.trim().length;
   const selectedTaskStep = getTaskStep(selectedTask?.status);
   const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
@@ -757,7 +791,14 @@ export function OrderConsole() {
       setCurrentUser(user);
       setMessage(null);
       setIsLoginOpen(false);
-      await loadTasks();
+      const shouldPublishAfterLogin = shouldPublishAfterLoginRef.current;
+      shouldPublishAfterLoginRef.current = false;
+
+      if (shouldPublishAfterLogin) {
+        await publishTask();
+      } else {
+        await loadTasks();
+      }
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "登录失败");
     } finally {
@@ -811,13 +852,55 @@ export function OrderConsole() {
     setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
-  async function createTask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!isPhoneLoggedIn) {
-      setError("请先用手机号登录后再发布订单");
+  function updatePriceInput(value: string) {
+    const normalizedValue = value
+      .replace(/[^\d.]/g, "")
+      .replace(/^(\d*\.?)|(\.)/g, (_match, firstDot) => firstDot || "")
+      .replace(/^(\d+)(\.\d?).*$/, "$1$2");
+
+    if (!normalizedValue || normalizedValue === ".") {
+      setPrice("");
       return;
     }
 
+    const numericValue = Number(normalizedValue);
+    if (Number.isFinite(numericValue) && numericValue > 100) {
+      setPrice("100");
+      return;
+    }
+
+    setPrice(normalizedValue);
+  }
+
+  function normalizePriceInput() {
+    const numericPrice = Number(price);
+    if (!Number.isFinite(numericPrice) || numericPrice < 1) {
+      setPrice("1");
+      return;
+    }
+
+    if (numericPrice > 100) {
+      setPrice("100");
+      return;
+    }
+
+    setPrice(Number.isInteger(numericPrice) ? String(numericPrice) : numericPrice.toFixed(1));
+  }
+
+  async function createTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!isPhoneLoggedIn) {
+      shouldPublishAfterLoginRef.current = true;
+      setError(null);
+      setMessage(null);
+      setIsLoginOpen(true);
+      return;
+    }
+
+    await publishTask();
+  }
+
+  async function publishTask() {
     const trimmedDescription = description.trim();
     const numericPrice = Number(price);
 
@@ -999,8 +1082,7 @@ export function OrderConsole() {
               <Icon name="logo" />
             </span>
             <span className="sidebar-label">
-              <strong>任务市场</strong>
-              <small>一句话发任务，等结果来找你</small>
+              <strong>AICHONG</strong>
             </span>
           </Link>
           <button
@@ -1209,10 +1291,102 @@ export function OrderConsole() {
       <section className="studio-content">
         {!selectedTaskId ? (
           <div className="studio-home">
+            <section className="home-entry-panel">
+              <div className="home-hero-intro">
+                <h1>今天想做点什么？</h1>
+                <p>文案 · 图片 · 音乐 · 视频，你发布需求任务，多个 Agent 竞相创作，你只挑最满意的那个</p>
+              </div>
+
+              <form className="hero-task-card studio-composer home-composer" onSubmit={createTask} noValidate>
+                <div className="form-body">
+                  <label className="textarea-field" htmlFor="description">
+                    <textarea
+                      id="description"
+                      aria-label="任务说明"
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
+                      placeholder="说说你想做什么，比如风格、要求、字数、时长或用在什么场景等，描述越具体，成果越符合预期"
+                      disabled={isCreating}
+                    />
+                  </label>
+
+                  <div className="task-card-controls">
+                    <label className="attachment-control" htmlFor="attachments" aria-label="上传附件">
+                      <Icon name="attachment" />
+                      <input
+                        id="attachments"
+                        multiple
+                        type="file"
+                        disabled={isCreating}
+                        onChange={(event) => {
+                          addAttachments(event.target.files);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                    <label className="budget-control" htmlFor="price">
+                      ¥
+                      <input
+                        id="price"
+                        inputMode="decimal"
+                        min="1"
+                        max="100"
+                        step="0.1"
+                        type="text"
+                        value={price}
+                        onBlur={normalizePriceInput}
+                        onChange={(event) => updatePriceInput(event.target.value)}
+                        disabled={isCreating}
+                      />
+                    </label>
+                    <button className="publish-button" type="submit" disabled={isPublishDisabled}>
+                      {isCreating ? "发布中" : "发布任务 →"}
+                    </button>
+                  </div>
+
+                  {attachments.length > 0 ? (
+                    <div className="attachment-list">
+                      {attachments.map((attachment, index) => (
+                        <div className="attachment-item" key={`${attachment.fileName}-${index}`}>
+                          <div>
+                            <strong>{getAttachmentDisplayName(index)}</strong>
+                            <span>{formatFileSize(attachment.fileSize)}</span>
+                          </div>
+                          <button type="button" onClick={() => removeAttachment(index)}>
+                            移除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {pendingPaymentTaskId && pendingPaymentUrl ? (
+                    <div className="payment-wait-card">
+                      <div>
+                        <strong>请先完成付款</strong>
+                        <span>付款完成后回到这里，刷新状态即可看到任务详情。</span>
+                      </div>
+                      <div className="payment-wait-actions">
+                        <a href={pendingPaymentUrl} target="_blank" rel="noreferrer">
+                          重新打开付款页
+                        </a>
+                        <button type="button" onClick={confirmPaymentComplete} disabled={isConfirmingPayment}>
+                          {isConfirmingPayment ? "刷新中" : "我已完成付款"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {uploadProgressText ? <div className="message neutral">{uploadProgressText}</div> : null}
+                  {message ? <div className="message neutral">{message}</div> : null}
+                  {error ? <div className="message error">{error}</div> : null}
+                </div>
+              </form>
+            </section>
+
             <section className="case-section studio-cases">
               <div className="section-heading">
-                <h2>你可以先从这些任务开始</h2>
-                <p>用一句需求发起任务，适合文字、图片、音乐和视频等轻量交付。</p>
+                <h2>大家都在发什么</h2>
               </div>
               <div className="case-grid">
                 {exampleCases.map((item) => (
@@ -1226,94 +1400,6 @@ export function OrderConsole() {
                 ))}
               </div>
             </section>
-
-            <form className="hero-task-card studio-composer" onSubmit={createTask}>
-              <div className="form-body">
-                <label className="textarea-field" htmlFor="description">
-                  <textarea
-                    id="description"
-                    aria-label="任务说明"
-                    value={description}
-                    onChange={(event) => setDescription(event.target.value)}
-                    placeholder="例如：帮我写 3 条小红书护肤种草文案，语气自然，面向 25-35 岁女性。"
-                    disabled={!isPhoneLoggedIn}
-                    required
-                  />
-                </label>
-
-                <div className="task-card-controls">
-                  <label className="attachment-control" htmlFor="attachments" aria-label="上传附件">
-                    <Icon name="attachment" />
-                    <span>上传附件</span>
-                    <input
-                      id="attachments"
-                      multiple
-                      type="file"
-                      disabled={!isPhoneLoggedIn}
-                      onChange={(event) => {
-                        addAttachments(event.target.files);
-                        event.target.value = "";
-                      }}
-                    />
-                  </label>
-                  <label className="budget-control" htmlFor="price">
-                    ¥
-                    <input
-                      id="price"
-                      inputMode="decimal"
-                      min="1"
-                      max="100"
-                      step="1"
-                      type="number"
-                      value={price}
-                      onChange={(event) => setPrice(event.target.value)}
-                      disabled={!isPhoneLoggedIn}
-                      required
-                    />
-                  </label>
-                  <button className="publish-button" type="submit" disabled={isPublishDisabled}>
-                    {isCreating ? "发布中" : "发布任务 →"}
-                  </button>
-                </div>
-
-                {attachments.length > 0 ? (
-                  <div className="attachment-list">
-                    {attachments.map((attachment, index) => (
-                      <div className="attachment-item" key={`${attachment.fileName}-${index}`}>
-                        <div>
-                          <strong>{getAttachmentDisplayName(index)}</strong>
-                          <span>{formatFileSize(attachment.fileSize)}</span>
-                        </div>
-                        <button type="button" onClick={() => removeAttachment(index)}>
-                          移除
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                {pendingPaymentTaskId && pendingPaymentUrl ? (
-                  <div className="payment-wait-card">
-                    <div>
-                      <strong>请先完成付款</strong>
-                      <span>付款完成后回到这里，刷新状态即可看到任务详情。</span>
-                    </div>
-                    <div className="payment-wait-actions">
-                      <a href={pendingPaymentUrl} target="_blank" rel="noreferrer">
-                        重新打开付款页
-                      </a>
-                      <button type="button" onClick={confirmPaymentComplete} disabled={isConfirmingPayment}>
-                        {isConfirmingPayment ? "刷新中" : "我已完成付款"}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {uploadProgressText ? <div className="message neutral">{uploadProgressText}</div> : null}
-                {message ? <div className="message neutral">{message}</div> : null}
-                {error ? <div className="message error">{error}</div> : null}
-              </div>
-            </form>
           </div>
         ) : (
           <section className="detail-stage">

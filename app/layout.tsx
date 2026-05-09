@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "任务发布工作台",
-  description: "发布任务、查看交付结果并确认采用的工作台"
+  title: "AICHONG",
+  description: "发布创作任务、查看投稿并选择满意结果"
 };
 
 export default function RootLayout({
