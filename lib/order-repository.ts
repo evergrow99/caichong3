@@ -362,6 +362,7 @@ export async function updateFromCaichongTask(orderId: string, task: PublishTask)
     .update({
       status: task.status || "PENDING_PAYMENT",
       payment_url: task.paymentUrl,
+      deadline_at: task.deadlineAt,
       close_reason: task.closeReason,
       submission_count: task.submissionCount || 0,
       updated_at: new Date().toISOString()

@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { getTaskService } from "@/lib/task-service";
-import { createFromCaichongTask, isOrderRepositoryEnabled, listByUser, mapLocalOrderToTask } from "@/lib/order-repository";
+import {
+  createFromCaichongTask,
+  isOrderRepositoryEnabled,
+  listByUser,
+  mapLocalOrderToTask,
+  updateFromCaichongTask
+} from "@/lib/order-repository";
 import { recordOperationLog } from "@/lib/operation-log";
 import { ensureUserProfile } from "@/lib/user-profile";
 import { getErrorMessage } from "@/lib/errors";
@@ -9,6 +15,40 @@ import { getErrorMessage } from "@/lib/errors";
 function toErrorResponse(error: unknown, fallback: string) {
   const message = getErrorMessage(error, fallback);
   return NextResponse.json({ error: message }, { status: 500 });
+}
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const refreshableStatuses = new Set(["PENDING_PAYMENT", "ACTIVE", "PENDING_SELECTION"]);
+
+async function refreshUserOrders(localOrders: Awaited<ReturnType<typeof listByUser>>, taskService: Awaited<ReturnType<typeof getTaskService>>) {
+  if (taskService.source !== "caichong") {
+    return localOrders;
+  }
+
+  const refreshedOrders = [];
+  for (const order of localOrders) {
+    if (!refreshableStatuses.has(order.status) || !uuidPattern.test(order.caichongTaskId)) {
+      refreshedOrders.push(order);
+      continue;
+    }
+
+    try {
+      const latestTask = await taskService.service.getTask(order.caichongTaskId);
+      await updateFromCaichongTask(order.id, latestTask);
+      refreshedOrders.push({
+        ...order,
+        status: latestTask.status || order.status,
+        paymentUrl: latestTask.paymentUrl || order.paymentUrl,
+        deadlineAt: latestTask.deadlineAt || order.deadlineAt,
+        closeReason: latestTask.closeReason,
+        submissionCount: latestTask.submissionCount || 0
+      });
+    } catch {
+      refreshedOrders.push(order);
+    }
+  }
+
+  return refreshedOrders;
 }
 
 export async function GET(request: Request) {
@@ -22,15 +62,16 @@ export async function GET(request: Request) {
 
     const localOrders = await listByUser(user);
     if (isOrderRepositoryEnabled()) {
+      const syncedOrders = await refreshUserOrders(localOrders, taskService);
       const start = (page - 1) * pageSize;
-      const tasks = localOrders.slice(start, start + pageSize).map(mapLocalOrderToTask);
+      const tasks = syncedOrders.slice(start, start + pageSize).map(mapLocalOrderToTask);
 
       return NextResponse.json({
         tasks,
-        total: localOrders.length,
+        total: syncedOrders.length,
         page,
         pageSize,
-        totalPages: Math.max(1, Math.ceil(localOrders.length / pageSize)),
+        totalPages: Math.max(1, Math.ceil(syncedOrders.length / pageSize)),
         accountMode: taskService.account.mode,
         accountLabel: taskService.account.label,
         source: "supabase"
