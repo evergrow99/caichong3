@@ -53,6 +53,7 @@ type IconName = "logo" | "plus" | "activity" | "rules" | "work" | "logout" | "co
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const MIN_DESCRIPTION_LENGTH = 10;
+const PENDING_PAYMENT_TASK_STORAGE_KEY = "pendingPaymentTaskId";
 const isPhoneValid = (phone: string) => /^1\d{10}$/.test(phone);
 const isCodeValid = (code: string) => /^\d{6}$/.test(code);
 
@@ -460,8 +461,10 @@ export function OrderConsole() {
 
       setSelectedTask((task) => (task ? { ...task, paymentUrl: data.paymentUrl } : task));
       setMessage("付款入口已刷新。");
+      return data.paymentUrl;
     } catch (paymentError) {
       setError(paymentError instanceof Error ? paymentError.message : "付款入口刷新失败");
+      return null;
     } finally {
       setIsRefreshingPayment(false);
     }
@@ -769,11 +772,25 @@ export function OrderConsole() {
         })
       );
 
-      setMessage(task.paymentUrl ? "任务已创建，请在订单详情中完成付款。" : "任务已创建，请到任务列表查看进展。");
+      let paymentUrl = task.paymentUrl;
+      if (!paymentUrl) {
+        paymentUrl = (await refreshPaymentUrl(task.taskId)) || undefined;
+      }
+
+      if (!paymentUrl) {
+        throw new Error("任务已创建，但付款页面暂时没有打开，请稍后刷新页面重试。");
+      }
+
+      window.sessionStorage.setItem(PENDING_PAYMENT_TASK_STORAGE_KEY, task.taskId);
+      updateSelectedTask(null);
+      setSelectedTask(null);
+      setSubmissions([]);
+      setMessage("任务已创建，正在打开付款页面。");
       setDescription("");
       setAttachments([]);
-      updateSelectedTask(task.taskId);
       await loadTasks();
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
+      window.location.assign(paymentUrl);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "发单失败");
     } finally {
@@ -803,6 +820,25 @@ export function OrderConsole() {
       setSubmissions([]);
     }
   }, [selectedTaskId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || selectedTaskId) {
+      return;
+    }
+
+    const pendingTaskId = window.sessionStorage.getItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
+    if (!pendingTaskId) {
+      return;
+    }
+
+    const paidTask = visibleTasks.find((task) => task.taskId === pendingTaskId);
+    if (!paidTask) {
+      return;
+    }
+
+    window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
+    updateSelectedTask(pendingTaskId);
+  }, [selectedTaskId, visibleTasks]);
 
   useEffect(() => {
     if (!isPhoneLoggedIn || !hasCurrentUserSyncableTasks) {
@@ -1131,6 +1167,7 @@ export function OrderConsole() {
                 ) : null}
 
                 {uploadProgressText ? <div className="message neutral">{uploadProgressText}</div> : null}
+                {message ? <div className="message neutral">{message}</div> : null}
                 {error ? <div className="message error">{error}</div> : null}
               </div>
             </form>
