@@ -370,7 +370,6 @@ export function OrderConsole() {
   const [codeCooldown, setCodeCooldown] = useState(0);
   const [uploadProgressText, setUploadProgressText] = useState<string | null>(null);
   const [selectingSubmissionId, setSelectingSubmissionId] = useState<string | null>(null);
-  const [previewByAttachmentUrl, setPreviewByAttachmentUrl] = useState<Record<string, string>>({});
   const [attachmentPreviewModal, setAttachmentPreviewModal] = useState<AttachmentPreviewModal | null>(null);
   const [previewLoadingUrl, setPreviewLoadingUrl] = useState<string | null>(null);
   const [downloadingAttachmentUrl, setDownloadingAttachmentUrl] = useState<string | null>(null);
@@ -524,37 +523,6 @@ export function OrderConsole() {
     }
 
     return uploaded;
-  }
-
-  async function previewAttachment(attachment: UploadedAttachment) {
-    setPreviewLoadingUrl(attachment.fileUrl);
-    setError(null);
-
-    try {
-      const response = await fetch(getAttachmentDownloadUrl(attachment, "inline"));
-      if (!response.ok) {
-        throw new Error("附件预览失败");
-      }
-
-      const contentType = response.headers.get("content-type") || "";
-      if (!isTextLikeAttachment(attachment.fileName, contentType)) {
-        setPreviewByAttachmentUrl((current) => ({
-          ...current,
-          [attachment.fileUrl]: "这个附件不是文本文件，请使用下载按钮保存后查看。"
-        }));
-        return;
-      }
-
-      const text = await response.text();
-      setPreviewByAttachmentUrl((current) => ({
-        ...current,
-        [attachment.fileUrl]: text || "文件内容为空。"
-      }));
-    } catch (previewError) {
-      setError(previewError instanceof Error ? previewError.message : "附件预览失败");
-    } finally {
-      setPreviewLoadingUrl(null);
-    }
   }
 
   async function openAttachmentPreview(attachment: UploadedAttachment, title = "附件预览") {
@@ -1494,33 +1462,30 @@ export function OrderConsole() {
                             </div>
                             {submission.attachments?.length ? (
                               <div className="attachment-list compact-list">
-                                {submission.attachments.map((attachment, index) => {
-                                  const previewText = previewByAttachmentUrl[attachment.fileUrl];
-
-                                  return (
-                                    <div className="attachment-preview-group" key={`${attachment.fileUrl}-${index}`}>
-                                      <div className="attachment-item linked attachment-row">
-                                        <div>
-                                          <strong>{getAttachmentDisplayName(index)}</strong>
-                                          {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
-                                        </div>
-                                        <div className="attachment-actions">
-                                          <button type="button" onClick={() => previewAttachment(attachment)} disabled={previewLoadingUrl === attachment.fileUrl}>
-                                            {previewLoadingUrl === attachment.fileUrl ? "读取中" : "预览"}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => downloadAttachment(attachment)}
-                                            disabled={downloadingAttachmentUrl === attachment.fileUrl}
-                                          >
-                                            {downloadingAttachmentUrl === attachment.fileUrl ? "下载中" : "下载"}
-                                          </button>
-                                        </div>
-                                      </div>
-                                      {previewText ? <pre className="attachment-preview">{previewText}</pre> : null}
+                                {submission.attachments.map((attachment, index) => (
+                                  <div className="attachment-item linked attachment-row" key={`${attachment.fileUrl}-${index}`}>
+                                    <div>
+                                      <strong>{getAttachmentDisplayName(index)}</strong>
+                                      {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
                                     </div>
-                                  );
-                                })}
+                                    <div className="attachment-actions">
+                                      <button
+                                        type="button"
+                                        onClick={() => openAttachmentPreview(attachment, getAttachmentDisplayName(index))}
+                                        disabled={previewLoadingUrl === attachment.fileUrl}
+                                      >
+                                        {previewLoadingUrl === attachment.fileUrl ? "读取中" : "预览"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => downloadAttachment(attachment)}
+                                        disabled={downloadingAttachmentUrl === attachment.fileUrl}
+                                      >
+                                        {downloadingAttachmentUrl === attachment.fileUrl ? "下载中" : "下载"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             ) : null}
                             {canSelectSubmission(selectedTask) ? (

@@ -2064,25 +2064,6 @@ label {
   cursor: not-allowed;
 }
 
-.attachment-preview-group {
-  display: grid;
-  gap: 8px;
-}
-
-.attachment-preview {
-  margin: 0;
-  border: 1px solid #b9d9d4;
-  border-radius: 8px;
-  background: #f4fffc;
-  color: var(--ink);
-  padding: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  overflow-x: auto;
-  white-space: pre-wrap;
-}
-
 .task-attachment-section {
   display: grid;
   gap: 10px;
