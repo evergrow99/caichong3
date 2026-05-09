@@ -1183,7 +1183,7 @@ export function OrderConsole() {
           <section className="attachment-preview-modal" role="dialog" aria-modal="true" aria-label="附件预览">
             <div className="modal-header">
               <div>
-                <h2>{attachmentPreviewModal.title}</h2>
+                <h2>附件预览</h2>
                 {attachmentPreviewModal.attachment.fileSize ? <p>{formatFileSize(attachmentPreviewModal.attachment.fileSize)}</p> : null}
               </div>
               <button aria-label="关闭附件预览" type="button" onClick={() => setAttachmentPreviewModal(null)}>
@@ -1192,7 +1192,7 @@ export function OrderConsole() {
             </div>
             <div className="attachment-preview-modal-body">
               {attachmentPreviewModal.kind === "image" && attachmentPreviewModal.url ? (
-                <img src={attachmentPreviewModal.url} alt={attachmentPreviewModal.title} />
+                <img src={attachmentPreviewModal.url} alt="附件预览" />
               ) : null}
               {attachmentPreviewModal.kind === "text" ? <pre>{attachmentPreviewModal.content}</pre> : null}
               {attachmentPreviewModal.kind === "unsupported" ? <p>{attachmentPreviewModal.content}</p> : null}
@@ -1465,13 +1465,13 @@ export function OrderConsole() {
                                 {submission.attachments.map((attachment, index) => (
                                   <div className="attachment-item linked attachment-row" key={`${attachment.fileUrl}-${index}`}>
                                     <div>
-                                      <strong>{getAttachmentDisplayName(index)}</strong>
+                                      <strong>{attachment.fileName || getAttachmentDisplayName(index)}</strong>
                                       {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
                                     </div>
                                     <div className="attachment-actions">
                                       <button
                                         type="button"
-                                        onClick={() => openAttachmentPreview(attachment, getAttachmentDisplayName(index))}
+                                        onClick={() => openAttachmentPreview(attachment)}
                                         disabled={previewLoadingUrl === attachment.fileUrl}
                                       >
                                         {previewLoadingUrl === attachment.fileUrl ? "读取中" : "预览"}
