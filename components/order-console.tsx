@@ -28,6 +28,7 @@ type UploadedAttachment = {
 
 type AttachmentPreviewModal = {
   attachment: UploadedAttachment;
+  title: string;
   kind: "image" | "text" | "unsupported";
   content?: string;
   url?: string;
@@ -286,6 +287,10 @@ function formatFileSize(bytes?: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function getAttachmentDisplayName(index: number) {
+  return `附件${index + 1}`;
+}
+
 function getAttachmentDownloadUrl(attachment: { fileUrl: string; fileName?: string }, disposition: "attachment" | "inline" = "attachment") {
   const params = new URLSearchParams({
     url: attachment.fileUrl,
@@ -504,7 +509,7 @@ export function OrderConsole() {
     }
 
     for (const [index, attachment] of attachments.entries()) {
-      setUploadProgressText(`正在上传附件 ${index + 1}/${attachments.length}：${attachment.fileName}`);
+      setUploadProgressText(`正在上传附件 ${index + 1}/${attachments.length}`);
       const formData = new FormData();
       formData.append("file", attachment.file);
 
@@ -552,7 +557,7 @@ export function OrderConsole() {
     }
   }
 
-  async function openAttachmentPreview(attachment: UploadedAttachment) {
+  async function openAttachmentPreview(attachment: UploadedAttachment, title = "附件预览") {
     setPreviewLoadingUrl(attachment.fileUrl);
     setError(null);
 
@@ -567,6 +572,7 @@ export function OrderConsole() {
       if (isImageLikeAttachment(attachment.fileName, contentType)) {
         setAttachmentPreviewModal({
           attachment,
+          title,
           kind: "image",
           url: previewUrl
         });
@@ -577,6 +583,7 @@ export function OrderConsole() {
         const text = await response.text();
         setAttachmentPreviewModal({
           attachment,
+          title,
           kind: "text",
           content: text || "文件内容为空。"
         });
@@ -585,6 +592,7 @@ export function OrderConsole() {
 
       setAttachmentPreviewModal({
         attachment,
+        title,
         kind: "unsupported",
         content: "这个附件暂时不能在线预览，请下载后查看。"
       });
@@ -614,7 +622,7 @@ export function OrderConsole() {
       link.click();
       link.remove();
       URL.revokeObjectURL(objectUrl);
-      setMessage(`已触发下载：${attachment.fileName || "交付附件"}`);
+      setMessage("已触发下载。");
     } catch (downloadError) {
       setError(downloadError instanceof Error ? downloadError.message : "附件下载失败");
     } finally {
@@ -1207,7 +1215,7 @@ export function OrderConsole() {
           <section className="attachment-preview-modal" role="dialog" aria-modal="true" aria-label="附件预览">
             <div className="modal-header">
               <div>
-                <h2>{attachmentPreviewModal.attachment.fileName || "附件预览"}</h2>
+                <h2>{attachmentPreviewModal.title}</h2>
                 {attachmentPreviewModal.attachment.fileSize ? <p>{formatFileSize(attachmentPreviewModal.attachment.fileSize)}</p> : null}
               </div>
               <button aria-label="关闭附件预览" type="button" onClick={() => setAttachmentPreviewModal(null)}>
@@ -1216,7 +1224,7 @@ export function OrderConsole() {
             </div>
             <div className="attachment-preview-modal-body">
               {attachmentPreviewModal.kind === "image" && attachmentPreviewModal.url ? (
-                <img src={attachmentPreviewModal.url} alt={attachmentPreviewModal.attachment.fileName || "附件图片"} />
+                <img src={attachmentPreviewModal.url} alt={attachmentPreviewModal.title} />
               ) : null}
               {attachmentPreviewModal.kind === "text" ? <pre>{attachmentPreviewModal.content}</pre> : null}
               {attachmentPreviewModal.kind === "unsupported" ? <p>{attachmentPreviewModal.content}</p> : null}
@@ -1305,7 +1313,7 @@ export function OrderConsole() {
                     {attachments.map((attachment, index) => (
                       <div className="attachment-item" key={`${attachment.fileName}-${index}`}>
                         <div>
-                          <strong>{attachment.fileName}</strong>
+                          <strong>{getAttachmentDisplayName(index)}</strong>
                           <span>{formatFileSize(attachment.fileSize)}</span>
                         </div>
                         <button type="button" onClick={() => removeAttachment(index)}>
@@ -1426,13 +1434,13 @@ export function OrderConsole() {
                             {selectedTask.attachments.map((attachment, index) => (
                               <div className="attachment-item linked attachment-row" key={`${attachment.fileUrl}-${index}`}>
                                 <div>
-                                  <strong>{attachment.fileName || `参考附件 ${index + 1}`}</strong>
+                                  <strong>{getAttachmentDisplayName(index)}</strong>
                                   {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
                                 </div>
                                 <div className="attachment-actions">
                                   <button
                                     type="button"
-                                    onClick={() => openAttachmentPreview(attachment)}
+                                    onClick={() => openAttachmentPreview(attachment, getAttachmentDisplayName(index))}
                                     disabled={previewLoadingUrl === attachment.fileUrl}
                                   >
                                     {previewLoadingUrl === attachment.fileUrl ? "读取中" : "预览"}
@@ -1493,7 +1501,7 @@ export function OrderConsole() {
                                     <div className="attachment-preview-group" key={`${attachment.fileUrl}-${index}`}>
                                       <div className="attachment-item linked attachment-row">
                                         <div>
-                                          <strong>{attachment.fileName || `交付附件 ${index + 1}`}</strong>
+                                          <strong>{getAttachmentDisplayName(index)}</strong>
                                           {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
                                         </div>
                                         <div className="attachment-actions">
