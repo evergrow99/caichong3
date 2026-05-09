@@ -26,6 +26,13 @@ type UploadedAttachment = {
   mimeType?: string;
 };
 
+type AttachmentPreviewModal = {
+  attachment: UploadedAttachment;
+  kind: "image" | "text" | "unsupported";
+  content?: string;
+  url?: string;
+};
+
 type CurrentUser = {
   id: string;
   phone: string;
@@ -301,6 +308,18 @@ function isTextLikeAttachment(fileName?: string, contentType = "") {
   );
 }
 
+function isImageLikeAttachment(fileName?: string, contentType = "") {
+  const normalizedName = (fileName || "").toLowerCase();
+  return (
+    contentType.includes("image/") ||
+    normalizedName.endsWith(".png") ||
+    normalizedName.endsWith(".jpg") ||
+    normalizedName.endsWith(".jpeg") ||
+    normalizedName.endsWith(".gif") ||
+    normalizedName.endsWith(".webp")
+  );
+}
+
 function getDisplayTaskDescription(description: string) {
   return description
     .replace(/^真实接口联调测试：?/, "")
@@ -347,6 +366,7 @@ export function OrderConsole() {
   const [uploadProgressText, setUploadProgressText] = useState<string | null>(null);
   const [selectingSubmissionId, setSelectingSubmissionId] = useState<string | null>(null);
   const [previewByAttachmentUrl, setPreviewByAttachmentUrl] = useState<Record<string, string>>({});
+  const [attachmentPreviewModal, setAttachmentPreviewModal] = useState<AttachmentPreviewModal | null>(null);
   const [previewLoadingUrl, setPreviewLoadingUrl] = useState<string | null>(null);
   const [downloadingAttachmentUrl, setDownloadingAttachmentUrl] = useState<string | null>(null);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
@@ -525,6 +545,49 @@ export function OrderConsole() {
         ...current,
         [attachment.fileUrl]: text || "文件内容为空。"
       }));
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "附件预览失败");
+    } finally {
+      setPreviewLoadingUrl(null);
+    }
+  }
+
+  async function openAttachmentPreview(attachment: UploadedAttachment) {
+    setPreviewLoadingUrl(attachment.fileUrl);
+    setError(null);
+
+    try {
+      const previewUrl = getAttachmentDownloadUrl(attachment, "inline");
+      const response = await fetch(previewUrl);
+      if (!response.ok) {
+        throw new Error("附件预览失败");
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (isImageLikeAttachment(attachment.fileName, contentType)) {
+        setAttachmentPreviewModal({
+          attachment,
+          kind: "image",
+          url: previewUrl
+        });
+        return;
+      }
+
+      if (isTextLikeAttachment(attachment.fileName, contentType)) {
+        const text = await response.text();
+        setAttachmentPreviewModal({
+          attachment,
+          kind: "text",
+          content: text || "文件内容为空。"
+        });
+        return;
+      }
+
+      setAttachmentPreviewModal({
+        attachment,
+        kind: "unsupported",
+        content: "这个附件暂时不能在线预览，请下载后查看。"
+      });
     } catch (previewError) {
       setError(previewError instanceof Error ? previewError.message : "附件预览失败");
     } finally {
@@ -1138,6 +1201,35 @@ export function OrderConsole() {
         </div>
       ) : null}
 
+      {attachmentPreviewModal ? (
+        <div className="modal-layer">
+          <button className="modal-backdrop" aria-label="关闭附件预览" type="button" onClick={() => setAttachmentPreviewModal(null)} />
+          <section className="attachment-preview-modal" role="dialog" aria-modal="true" aria-label="附件预览">
+            <div className="modal-header">
+              <div>
+                <h2>{attachmentPreviewModal.attachment.fileName || "附件预览"}</h2>
+                {attachmentPreviewModal.attachment.fileSize ? <p>{formatFileSize(attachmentPreviewModal.attachment.fileSize)}</p> : null}
+              </div>
+              <button aria-label="关闭附件预览" type="button" onClick={() => setAttachmentPreviewModal(null)}>
+                ×
+              </button>
+            </div>
+            <div className="attachment-preview-modal-body">
+              {attachmentPreviewModal.kind === "image" && attachmentPreviewModal.url ? (
+                <img src={attachmentPreviewModal.url} alt={attachmentPreviewModal.attachment.fileName || "附件图片"} />
+              ) : null}
+              {attachmentPreviewModal.kind === "text" ? <pre>{attachmentPreviewModal.content}</pre> : null}
+              {attachmentPreviewModal.kind === "unsupported" ? <p>{attachmentPreviewModal.content}</p> : null}
+            </div>
+            <div className="attachment-preview-modal-actions">
+              <button type="button" onClick={() => downloadAttachment(attachmentPreviewModal.attachment)}>
+                下载附件
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       <section className="studio-content">
         {!selectedTaskId ? (
           <div className="studio-home">
@@ -1326,6 +1418,38 @@ export function OrderConsole() {
                           <span>{getCloseReasonLabel(selectedTask.closeReason)}</span>
                         ) : null}
                       </div>
+
+                      {selectedTask.attachments?.length ? (
+                        <div className="task-attachment-section">
+                          <h5>参考附件</h5>
+                          <div className="attachment-list compact-list">
+                            {selectedTask.attachments.map((attachment, index) => (
+                              <div className="attachment-item linked attachment-row" key={`${attachment.fileUrl}-${index}`}>
+                                <div>
+                                  <strong>{attachment.fileName || `参考附件 ${index + 1}`}</strong>
+                                  {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
+                                </div>
+                                <div className="attachment-actions">
+                                  <button
+                                    type="button"
+                                    onClick={() => openAttachmentPreview(attachment)}
+                                    disabled={previewLoadingUrl === attachment.fileUrl}
+                                  >
+                                    {previewLoadingUrl === attachment.fileUrl ? "读取中" : "预览"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadAttachment(attachment)}
+                                    disabled={downloadingAttachmentUrl === attachment.fileUrl}
+                                  >
+                                    {downloadingAttachmentUrl === attachment.fileUrl ? "下载中" : "下载"}
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
 
                       {selectedTask.paymentUrl && selectedTask.status === "PENDING_PAYMENT" ? (
                         <div className="payment-box">

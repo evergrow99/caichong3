@@ -2083,6 +2083,97 @@ label {
   white-space: pre-wrap;
 }
 
+.task-attachment-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.task-attachment-section h5 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.attachment-preview-modal {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(880px, 94vw);
+  max-height: min(760px, 88vh);
+  border: 1px solid #e2e7e2;
+  border-radius: 24px;
+  background: #ffffff;
+  padding: 22px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.22);
+}
+
+.attachment-preview-modal .modal-header {
+  margin-bottom: 14px;
+}
+
+.attachment-preview-modal .modal-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.attachment-preview-modal-body {
+  min-height: 220px;
+  overflow: auto;
+  border: 1px solid #edf0ed;
+  border-radius: 16px;
+  background: #f7f8f6;
+  padding: 14px;
+}
+
+.attachment-preview-modal-body img {
+  display: block;
+  max-width: 100%;
+  max-height: 58vh;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.attachment-preview-modal-body pre {
+  margin: 0;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.attachment-preview-modal-body p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.attachment-preview-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.attachment-preview-modal-actions button {
+  border: 1px solid #d8ded9;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--ink);
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.attachment-preview-modal-actions button:hover {
+  border-color: #c6d0c8;
+  background: #eef3ef;
+}
+
 .attachment-item > button {
   border: 0;
   border-radius: 8px;
