@@ -2759,6 +2759,11 @@ label {
   font-weight: 400;
 }
 
+.selection-deadline-warning {
+  color: #c5231f;
+  font-weight: 700;
+}
+
 .section-eyebrow {
   margin-bottom: 12px;
   color: var(--muted);

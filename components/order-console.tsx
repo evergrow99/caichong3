@@ -1471,7 +1471,9 @@ export function OrderConsole() {
                           <span>提交期结束 {formatDateTimeToMinute(selectedTask.deadlineAt)}</span>
                         ) : null}
                         {selectedTask.status === "PENDING_SELECTION" && selectedTask.deadlineAt ? (
-                          <span>选择期结束 {formatDateTimeToMinute(selectedTask.deadlineAt)}</span>
+                          <span className="selection-deadline-warning">
+                            请在 {formatDateTimeToMinute(selectedTask.deadlineAt)} 前选定投稿，超时将自动退款。
+                          </span>
                         ) : null}
                         {selectedTask.status === "COMPLETED" && selectedTask.updatedAt ? (
                           <span>完成时间 {formatDateTimeToMinute(selectedTask.updatedAt)}</span>
