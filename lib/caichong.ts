@@ -90,6 +90,7 @@ const DEFAULT_BASE_URL = "https://main-api.caichong.net";
 type RawTask = PublishTask & {
   id?: string;
   deadline?: string | null;
+  selectionDeadline?: string | null;
   paidAt?: string | null;
   price?: number | string;
   _count?: {
@@ -136,6 +137,26 @@ function unwrapTrpc<T>(payload: TrpcSuccess<T> | TrpcFailure): T {
   return payload.result.data;
 }
 
+function addHoursToIso(value: string | null | undefined, hours: number) {
+  if (!value) return undefined;
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
+  date.setHours(date.getHours() + hours);
+  return date.toISOString();
+}
+
+function resolveTaskDeadlineAt(task: RawTask) {
+  if (task.status === "PENDING_SELECTION") {
+    return task.selectionDeadline || addHoursToIso(task.deadline, 24) || task.deadlineAt || undefined;
+  }
+
+  return task.deadlineAt || task.deadline || undefined;
+}
+
 function normalizeTask(task: RawTask): PublishTask {
   return {
     ...task,
@@ -144,7 +165,7 @@ function normalizeTask(task: RawTask): PublishTask {
     status: task.status || "PENDING_PAYMENT",
     paidAt: task.paidAt || undefined,
     updatedAt: task.updatedAt || undefined,
-    deadlineAt: task.deadlineAt || task.deadline || undefined,
+    deadlineAt: resolveTaskDeadlineAt(task),
     submissionCount: task.submissionCount ?? task._count?.submissions ?? 0
   };
 }
