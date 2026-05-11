@@ -74,6 +74,7 @@ type IconName =
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const MIN_DESCRIPTION_LENGTH = 10;
+const DESCRIPTION_TOO_SHORT_ERROR = "请输入10个字以上的需求描述";
 const PENDING_PAYMENT_TASK_STORAGE_KEY = "pendingPaymentTaskId";
 const SUBMISSION_READ_COUNTS_STORAGE_KEY = "aichong:submission-read-counts:v2";
 const IMAGE_FILE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
@@ -113,26 +114,26 @@ const exampleCases = [
   {
     type: "文案",
     title: "文案写作",
-    request: "覆盖工作与生活全场景。无论是社交平台图文文案、直播口播脚本、长篇工作总结，还是私人旅游攻略、高情商聊天回复、朋友圈配文……等任何文字撰写需求，都能为你代笔。",
+    request: "从工作总结、社交图文，到旅游攻略、高情商回复等，全场景文字需求都能代笔。",
     iconSrc: "/icons/case-copy.svg"
   },
   {
     type: "图片",
     title: "图像设计",
-    request: "涵盖各类平面与图像处理。大到品牌Logo设计、电商商品主图、商业活动海报，小到老照片高清修复、个人专属头像、宠物插画定制……以及更多脑洞大开的作图委托。",
+    request: "从品牌Logo、电商主图，到老照片修复、头像定制等，满足各类图像处理委托。",
     iconSrc: "/icons/case-image.svg"
-  },
-  {
-    type: "视频",
-    title: "视频创作",
-    request: "兼顾专业提效与日常记录。从多素材短视频混剪、数字人替身口播、长视频高光切片，到家庭Vlog粗剪、图文素材转视频、视频听写与字幕压制……以及各类繁琐的视频处理委托。",
-    iconSrc: "/icons/case-video.svg"
   },
   {
     type: "声音",
     title: "音频制作",
-    request: "提供专业音频与个性化声音。包含有声书自然人声配音、背景音乐、短剧特效音定制，以及专属生日歌曲生成、嘈杂音频降噪分离……等所有声音相关的制作委托。",
+    request: "从人声配音、背景音乐，到音频降噪、专属生日歌等，提供专业的声音制作服务。",
     iconSrc: "/icons/case-music.svg"
+  },
+  {
+    type: "视频",
+    title: "视频创作",
+    request: "从短视频混剪、数字人播报，到Vlog粗剪、字幕压制等，搞定各类繁琐视频任务。",
+    iconSrc: "/icons/case-video.svg"
   }
 ];
 
@@ -538,6 +539,7 @@ export function OrderConsole() {
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isRefreshingPayment, setIsRefreshingPayment] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -571,9 +573,11 @@ export function OrderConsole() {
   const canSendCode = isPhoneValid(loginPhone) && !isSendingCode && codeCooldown === 0;
   const isPhoneLoggedIn = currentUser?.authMode === "phone";
   const isPublishDisabled = isCreating || description.trim().length === 0;
+  const shouldShowDescriptionError = error === DESCRIPTION_TOO_SHORT_ERROR;
   const descriptionLength = description.trim().length;
   const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
+  const shouldShowSidebarOrders = Boolean(isPhoneLoggedIn && hasLoadedTasks && visibleTasks.length > 0);
   const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
 
   function getSubmissionReadStorageKey() {
@@ -708,6 +712,7 @@ export function OrderConsole() {
       return [];
     } finally {
       setIsLoading(false);
+      setHasLoadedTasks(true);
     }
   }
 
@@ -1037,6 +1042,8 @@ export function OrderConsole() {
         })
       );
 
+      setTasks([]);
+      setHasLoadedTasks(false);
       setCurrentUser(user);
       setIsAuthLoading(false);
       setMessage(null);
@@ -1061,6 +1068,8 @@ export function OrderConsole() {
       method: "POST"
     });
     setCurrentUser(null);
+    setTasks([]);
+    setHasLoadedTasks(false);
     updateSelectedTask(null);
     setSelectedTask(null);
     setSubmissions([]);
@@ -1155,7 +1164,7 @@ export function OrderConsole() {
     const numericPrice = Number(price);
 
     if (trimmedDescription.length < MIN_DESCRIPTION_LENGTH) {
-      setError("请输入10个字以上的需求描述");
+      setError(DESCRIPTION_TOO_SHORT_ERROR);
       return;
     }
 
@@ -1381,67 +1390,67 @@ export function OrderConsole() {
             <span className="nav-icon-slot">
               <Icon name="plus" />
             </span>
-            <span className="sidebar-label">新建任务</span>
+            <span className="sidebar-label">发布新任务</span>
           </button>
         </nav>
 
-        <section className="sidebar-orders" ref={filterMenuRef}>
-          <button className="sidebar-section-toggle" type="button" onClick={() => setIsFilterOpen((open) => !open)}>
-            <span className="sidebar-label">历史任务</span>
-            <span className={`filter-arrow ${isFilterOpen ? "open" : ""}`}>
-              <Icon name="chevron" />
-            </span>
-          </button>
-          <div className={`sidebar-filter-menu ${isFilterOpen ? "open" : ""}`}>
-            {taskFilters.map((filter) => (
-              <button
-                className={taskFilter === filter.key ? "active" : ""}
-                key={filter.key}
-                type="button"
-                onClick={() => {
-                  setTaskFilter(filter.key);
-                  setIsFilterOpen(false);
-                }}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="sidebar-task-list">
-            {filteredTasks.length > 0 ? (
-              filteredTasks.map((task) => (
+        {shouldShowSidebarOrders ? (
+          <section className="sidebar-orders" ref={filterMenuRef}>
+            <button className="sidebar-section-toggle" type="button" onClick={() => setIsFilterOpen((open) => !open)}>
+              <span className="sidebar-label">历史任务</span>
+              <span className={`filter-arrow ${isFilterOpen ? "open" : ""}`}>
+                <Icon name="chevron" />
+              </span>
+            </button>
+            <div className={`sidebar-filter-menu ${isFilterOpen ? "open" : ""}`}>
+              {taskFilters.map((filter) => (
                 <button
-                  className={`sidebar-task ${selectedTaskId === task.taskId ? "active" : ""}`}
-                  key={task.taskId}
-                  onClick={() => {
-                    markTaskSubmissionsRead(task.taskId);
-                    updateSelectedTask(task.taskId);
-                    setIsMenuOpen(false);
-                  }}
+                  className={taskFilter === filter.key ? "active" : ""}
+                  key={filter.key}
                   type="button"
+                  onClick={() => {
+                    setTaskFilter(filter.key);
+                    setIsFilterOpen(false);
+                  }}
                 >
-                  <span className="sidebar-task-title">{getDisplayTaskDescription(task.description)}</span>
-                  <span className="sidebar-task-meta">
-                    <span className="sidebar-task-submission-count" title={`${getSubmissionCount(task)} 接单`}>
-                      {getSubmissionCount(task)}
-                    </span>
-                    <span className={`sidebar-task-status ${getSidebarStatusClassName(task.status)}`}>
-                      {getTaskStatusLabel(task.status)}
-                      {hasUnreadSubmissions(task) ? (
-                        <span className="sidebar-task-unread-dot" aria-label={`${getUnreadSubmissionCount(task)} 条新投稿`}>
-                          {getUnreadSubmissionCount(task) > 9 ? "9+" : getUnreadSubmissionCount(task)}
-                        </span>
-                      ) : null}
-                    </span>
-                  </span>
+                  {filter.label}
                 </button>
-              ))
-            ) : (
-              <div className="sidebar-empty">{isPhoneLoggedIn ? "暂无历史任务" : "登录后查看订单列表"}</div>
-            )}
-          </div>
-        </section>
+              ))}
+            </div>
+
+            <div className="sidebar-task-list">
+              {filteredTasks.map((task) => (
+                  <button
+                    className={`sidebar-task ${selectedTaskId === task.taskId ? "active" : ""}`}
+                    key={task.taskId}
+                    onClick={() => {
+                      markTaskSubmissionsRead(task.taskId);
+                      updateSelectedTask(task.taskId);
+                      setIsMenuOpen(false);
+                    }}
+                    type="button"
+                  >
+                    <span className="sidebar-task-title">{getDisplayTaskDescription(task.description)}</span>
+                    <span className="sidebar-task-meta">
+                      <span className="sidebar-task-submission-count" title={`${getSubmissionCount(task)} 接单`}>
+                        {getSubmissionCount(task)}
+                      </span>
+                      <span className={`sidebar-task-status ${getSidebarStatusClassName(task.status)}`}>
+                        {getTaskStatusLabel(task.status)}
+                        {hasUnreadSubmissions(task) ? (
+                          <span className="sidebar-task-unread-dot" aria-label={`${getUnreadSubmissionCount(task)} 条新投稿`}>
+                            {getUnreadSubmissionCount(task) > 9 ? "9+" : getUnreadSubmissionCount(task)}
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+            </div>
+          </section>
+        ) : (
+          <div className="sidebar-orders-placeholder" aria-hidden="true" />
+        )}
 
         <nav className="studio-bottom-links">
           <Link href="/market-rules" target="_blank" rel="noreferrer" onClick={() => setIsMenuOpen(false)}>
@@ -1495,7 +1504,7 @@ export function OrderConsole() {
           <section className="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
             <div className="modal-header">
               <div>
-                <h2 id="login-title">手机号登录</h2>
+                <h2 id="login-title">登录/注册</h2>
                 <p>登录后可以发布任务、查看投稿和历史任务。</p>
               </div>
               <button aria-label="关闭登录弹窗" type="button" onClick={() => setIsLoginOpen(false)}>
@@ -1542,7 +1551,7 @@ export function OrderConsole() {
 
       {attachmentPreviewModal ? (
         <div className="modal-layer">
-          <button className="modal-backdrop" aria-label="关闭附件预览" type="button" onClick={() => setAttachmentPreviewModal(null)} />
+          <button className="modal-backdrop preview-backdrop" aria-label="关闭附件预览" type="button" onClick={() => setAttachmentPreviewModal(null)} />
           <section className="attachment-preview-modal" role="dialog" aria-modal="true" aria-label="附件预览">
             <div className="modal-header">
               <div>
@@ -1550,7 +1559,7 @@ export function OrderConsole() {
                 {attachmentPreviewModal.attachment.fileSize ? <p>{formatFileSize(attachmentPreviewModal.attachment.fileSize)}</p> : null}
               </div>
               <button aria-label="关闭附件预览" type="button" onClick={() => setAttachmentPreviewModal(null)}>
-                ×
+                <Icon name="close" />
               </button>
             </div>
             <div className="attachment-preview-modal-body">
@@ -1562,6 +1571,7 @@ export function OrderConsole() {
             </div>
             <div className="attachment-preview-modal-actions">
               <button type="button" onClick={() => downloadAttachment(attachmentPreviewModal.attachment)}>
+                <Icon name="download" />
                 下载附件
               </button>
             </div>
@@ -1639,7 +1649,13 @@ export function OrderConsole() {
                       id="description"
                       aria-label="任务说明"
                       value={description}
-                      onChange={(event) => setDescription(event.target.value)}
+                      onChange={(event) => {
+                        const nextDescription = event.target.value;
+                        setDescription(nextDescription);
+                        if (error === DESCRIPTION_TOO_SHORT_ERROR && nextDescription.trim().length >= MIN_DESCRIPTION_LENGTH) {
+                          setError(null);
+                        }
+                      }}
                       placeholder="说说你想做什么，比如风格、要求、字数、时长或用在什么场景等，描述越具体，成果越符合预期"
                       disabled={isCreating}
                     />
@@ -1664,8 +1680,24 @@ export function OrderConsole() {
                         id="attachments"
                         multiple
                         type="file"
-                        disabled={!isPhoneLoggedIn || isCreating}
+                        disabled={isCreating}
+                        onClick={(event) => {
+                          if (!isPhoneLoggedIn) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setError(null);
+                            setMessage(null);
+                            setIsLoginOpen(true);
+                          }
+                        }}
                         onChange={(event) => {
+                          if (!isPhoneLoggedIn) {
+                            event.target.value = "";
+                            setError(null);
+                            setMessage(null);
+                            setIsLoginOpen(true);
+                            return;
+                          }
                           addAttachments(event.target.files);
                           event.target.value = "";
                         }}
@@ -1710,9 +1742,10 @@ export function OrderConsole() {
 
                   {uploadProgressText ? <div className="message neutral">{uploadProgressText}</div> : null}
                   {message ? <div className="message neutral">{message}</div> : null}
-                  {error ? <div className="message error">{error}</div> : null}
+                  {error && !shouldShowDescriptionError ? <div className="message error">{error}</div> : null}
                 </div>
               </form>
+              {shouldShowDescriptionError ? <div className="composer-validation-message">{DESCRIPTION_TOO_SHORT_ERROR}</div> : null}
             </section>
 
             <section className="case-section studio-cases">
@@ -1757,24 +1790,21 @@ export function OrderConsole() {
                         <h4 className="detail-title">{getDisplayTaskDescription(selectedTask.description)}</h4>
                         <span className="money">¥{selectedTask.price}</span>
                       </div>
-                      <div className="meta-row">
+                      <div className="task-detail-meta-line">
                         <span className="chip">{getTaskStatusLabel(selectedTask.status)}</span>
-                        <span className="chip">{selectedTask.submissionCount || 0} 接单</span>
-                        {selectedTask.attachments?.length ? <span className="chip">附件 {selectedTask.attachments.length}</span> : null}
-                      </div>
-                      <div className="time-row">
+                        <span className="chip">{selectedTask.submissionCount || 0} 投稿</span>
                         {selectedTask.status === "PENDING_PAYMENT" && selectedTask.createdAt ? (
                           <>
-                            <span>创建时间 {formatDateTimeToMinute(selectedTask.createdAt)}</span>
-                            <span>付款截止 {formatDateTimeToMinute(addHoursToDateTime(selectedTask.createdAt, 24))}</span>
-                            <span>支付链接有效 30 分钟，可刷新</span>
+                            <span className="task-detail-time-text">创建时间 {formatDateTimeToMinute(selectedTask.createdAt)}</span>
+                            <span className="task-detail-time-text">付款截止 {formatDateTimeToMinute(addHoursToDateTime(selectedTask.createdAt, 24))}</span>
+                            <span className="task-detail-time-text">支付链接有效 30 分钟，可刷新</span>
                           </>
                         ) : null}
                         {selectedTask.status === "ACTIVE" && (selectedTask.paidAt || selectedTask.createdAt) ? (
-                          <span>发布时间 {formatDateTimeToMinute(selectedTask.paidAt || selectedTask.createdAt)}</span>
+                          <span className="task-detail-time-text">发布时间 {formatDateTimeToMinute(selectedTask.paidAt || selectedTask.createdAt)}</span>
                         ) : null}
                         {selectedTask.status === "ACTIVE" && selectedTask.deadlineAt ? (
-                          <span>提交期结束 {formatDateTimeToMinute(selectedTask.deadlineAt)}</span>
+                          <span className="task-detail-time-text">提交期结束 {formatDateTimeToMinute(selectedTask.deadlineAt)}</span>
                         ) : null}
                         {selectedTask.status === "PENDING_SELECTION" && selectedTask.deadlineAt ? (
                           <span className="selection-deadline-warning">
@@ -1782,10 +1812,10 @@ export function OrderConsole() {
                           </span>
                         ) : null}
                         {selectedTask.status === "COMPLETED" && selectedTask.updatedAt ? (
-                          <span>完成时间 {formatDateTimeToMinute(selectedTask.updatedAt)}</span>
+                          <span className="task-detail-time-text">完成时间 {formatDateTimeToMinute(selectedTask.updatedAt)}</span>
                         ) : null}
                         {selectedTask.status === "CLOSED" && selectedTask.closeReason ? (
-                          <span>{getCloseReasonLabel(selectedTask.closeReason)}</span>
+                          <span className="task-detail-time-text">{getCloseReasonLabel(selectedTask.closeReason)}</span>
                         ) : null}
                       </div>
 

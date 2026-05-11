@@ -397,6 +397,10 @@ textarea:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
+.sidebar-orders-placeholder {
+  min-height: 0;
+}
+
 .sidebar-task {
   display: flex;
   align-items: center;
@@ -1117,6 +1121,13 @@ textarea:focus-visible {
   backdrop-filter: blur(12px);
 }
 
+.preview-backdrop {
+  background:
+    radial-gradient(circle at 50% 18%, rgba(103, 232, 120, 0.1), transparent 34%),
+    rgba(2, 5, 3, 0.78);
+  backdrop-filter: blur(12px);
+}
+
 .login-modal {
   position: relative;
   z-index: 1;
@@ -1594,7 +1605,7 @@ textarea:focus-visible {
   padding: 16px;
   line-height: 1.7;
   outline: none;
-  resize: vertical;
+  resize: none;
 }
 
 .home-composer .textarea-field textarea {
@@ -2414,7 +2425,7 @@ textarea:focus-visible {
 
 .studio-shell.home-active .home-hero-intro h1 {
   color: #f7fbf7;
-  font-size: clamp(34px, 3.8vw, 52px);
+  font-size: clamp(24px, 2.4vw, 32px);
   line-height: 1.08;
   text-shadow: 0 20px 80px rgba(103, 232, 120, 0.14);
 }
@@ -2441,8 +2452,8 @@ textarea:focus-visible {
 .studio-shell.home-active .home-composer .form-body {
   display: flex;
   flex-direction: column;
-  min-height: 330px;
-  max-height: 330px;
+  min-height: 230px;
+  max-height: 230px;
   padding: 22px;
 }
 
@@ -2545,6 +2556,16 @@ textarea:focus-visible {
   background: rgba(255, 255, 255, 0.16);
   color: rgba(244, 248, 243, 0.62);
   box-shadow: none;
+}
+
+.composer-validation-message {
+  width: min(760px, 100%);
+  margin: -12px auto 0;
+  padding: 0 32px;
+  color: #ff756f;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
 }
 
 .studio-shell.home-active .attachment-list {
@@ -2677,7 +2698,7 @@ textarea:focus-visible {
 
 .studio-shell.home-active .case-section {
   width: min(1080px, 100%);
-  margin-top: 26px;
+  margin-top: 56px;
 }
 
 .studio-shell.home-active .case-grid {
@@ -2752,7 +2773,7 @@ textarea:focus-visible {
   }
 
   .studio-shell.home-active .home-hero-intro h1 {
-    font-size: 36px;
+    font-size: 28px;
     line-height: 1.08;
   }
 
@@ -2766,8 +2787,8 @@ textarea:focus-visible {
   }
 
   .studio-shell.home-active .home-composer .form-body {
-    min-height: 310px;
-    max-height: 310px;
+    min-height: 230px;
+    max-height: 230px;
     padding: 18px;
   }
 
@@ -3214,11 +3235,16 @@ textarea:focus-visible {
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(880px, 94vw);
   max-height: min(760px, 88vh);
-  border: 1px solid #e2e7e2;
+  border: 1px solid rgba(153, 255, 183, 0.14);
   border-radius: 24px;
-  background: #ffffff;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(103, 232, 120, 0.1), transparent 32%),
+    linear-gradient(180deg, rgba(23, 30, 26, 0.98), rgba(9, 13, 11, 0.98));
   padding: 22px;
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.22);
+  color: #f4f8f3;
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
 }
 
 .attachment-preview-modal .modal-header {
@@ -3227,16 +3253,16 @@ textarea:focus-visible {
 
 .attachment-preview-modal .modal-header p {
   margin: 6px 0 0;
-  color: var(--muted);
+  color: rgba(202, 213, 204, 0.66);
   font-size: 13px;
 }
 
 .attachment-preview-modal-body {
   min-height: 220px;
   overflow: auto;
-  border: 1px solid #edf0ed;
+  border: 1px solid rgba(153, 255, 183, 0.11);
   border-radius: 16px;
-  background: #f7f8f6;
+  background: rgba(255, 255, 255, 0.045);
   padding: 14px;
 }
 
@@ -3246,11 +3272,13 @@ textarea:focus-visible {
   max-height: 58vh;
   margin: 0 auto;
   object-fit: contain;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .attachment-preview-modal-body pre {
   margin: 0;
-  color: var(--ink);
+  color: #eef8ef;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
   line-height: 1.7;
@@ -3259,7 +3287,7 @@ textarea:focus-visible {
 
 .attachment-preview-modal-body p {
   margin: 0;
-  color: var(--muted);
+  color: rgba(229, 238, 231, 0.78);
   line-height: 1.7;
 }
 
@@ -3270,19 +3298,30 @@ textarea:focus-visible {
 }
 
 .attachment-preview-modal-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid #d8ded9;
   border-radius: 999px;
-  background: #ffffff;
-  color: var(--ink);
+  background: rgba(255, 255, 255, 0.07);
+  color: #f4f8f3;
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.attachment-preview-modal-actions button .ui-icon {
+  width: 17px;
+  height: 17px;
 }
 
 .attachment-preview-modal-actions button:hover {
-  border-color: #c6d0c8;
-  background: #eef3ef;
+  border-color: rgba(103, 232, 120, 0.34);
+  background: rgba(103, 232, 120, 0.13);
+  color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .attachment-remove-button {
@@ -4023,6 +4062,23 @@ textarea:focus-visible {
   border-color: rgba(103, 232, 120, 0.34);
   background: rgba(103, 232, 120, 0.12);
   color: #bdf8c5;
+}
+
+.studio-shell.detail-active .task-detail-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 12px;
+  color: rgba(202, 213, 204, 0.66);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.studio-shell.detail-active .task-detail-time-text {
+  color: rgba(202, 213, 204, 0.66);
+  font-size: 13px;
+  font-weight: 400;
 }
 
 .studio-shell.detail-active .meta-row,
