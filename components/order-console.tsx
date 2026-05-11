@@ -56,14 +56,45 @@ type ConfigHealth = {
 };
 
 type TaskFilter = "all" | "ACTIVE" | "PENDING_SELECTION" | "COMPLETED" | "CLOSED";
-type IconName = "logo" | "plus" | "activity" | "rules" | "work" | "logout" | "collapse" | "chevron" | "attachment" | "user";
+type IconName =
+  | "logo"
+  | "plus"
+  | "activity"
+  | "rules"
+  | "work"
+  | "logout"
+  | "sidebarCollapse"
+  | "sidebarExpand"
+  | "menu"
+  | "close"
+  | "chevron"
+  | "attachment"
+  | "user";
 
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const MIN_DESCRIPTION_LENGTH = 10;
 const PENDING_PAYMENT_TASK_STORAGE_KEY = "pendingPaymentTaskId";
+const SUBMISSION_READ_COUNTS_STORAGE_KEY = "aichong:submission-read-counts:v2";
 const isPhoneValid = (phone: string) => /^1\d{10}$/.test(phone);
 const isCodeValid = (code: string) => /^\d{6}$/.test(code);
+const maskPhone = (phone: string) => {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length !== 11) {
+    return phone;
+  }
+  return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
+};
+const getSubmissionCount = (task: PublishTask) => task.submissionCount || 0;
+const getSidebarStatusClassName = (status: string) => {
+  if (status === "ACTIVE") {
+    return "is-active";
+  }
+  if (status === "PENDING_SELECTION") {
+    return "is-selection";
+  }
+  return "";
+};
 
 const taskFilters: { key: TaskFilter; label: string }[] = [
   { key: "all", label: "全部" },
@@ -75,112 +106,30 @@ const taskFilters: { key: TaskFilter; label: string }[] = [
 
 const exampleCases = [
   {
-    type: "品牌设计",
-    title: "咖啡店 Logo 初稿",
-    request: "想要一个适合头像和门店招牌的 Logo，温暖、简洁、有手作感。",
-    result: "收到 3 组方向，可继续挑一版深化。",
-    visual: "text"
-  },
-  {
-    type: "图片参考",
-    title: "新品海报视觉方向",
-    request: "为周末活动做一张海报参考图，适合朋友圈和小红书发布。",
-    result: "收到画面参考、配色和可复用提示词。",
-    visual: "image"
-  },
-  {
     type: "文案",
-    title: "护肤品种草内容",
-    request: "给新品面霜写几条自然一点的小红书文案，不要太像广告。",
-    result: "收到标题、正文、标签和语气建议。",
-    visual: "music"
+    title: "文案写作",
+    request: "覆盖工作与生活全场景。无论是社交平台图文文案、直播口播脚本、长篇工作总结，还是私人旅游攻略、高情商聊天回复、朋友圈配文……等任何文字撰写需求，都能为你代笔。",
+    iconSrc: "/icons/case-copy.svg"
   },
   {
-    type: "脚本",
-    title: "产品介绍脚本",
-    request: "为新品做 30 秒短视频脚本，包含分镜、旁白和字幕节奏。",
-    result: "收到可直接给剪辑参考的脚本结构。",
-    visual: "video"
+    type: "图片",
+    title: "图像设计",
+    request: "涵盖各类平面与图像处理。大到品牌Logo设计、电商商品主图、商业活动海报，小到老照片高清修复、个人专属头像、宠物插画定制……以及更多脑洞大开的作图委托。",
+    iconSrc: "/icons/case-image.svg"
+  },
+  {
+    type: "视频",
+    title: "视频创作",
+    request: "兼顾专业提效与日常记录。从多素材短视频混剪、数字人替身口播、长视频高光切片，到家庭Vlog粗剪、图文素材转视频、视频听写与字幕压制……以及各类繁琐的视频处理委托。",
+    iconSrc: "/icons/case-video.svg"
+  },
+  {
+    type: "声音",
+    title: "音频制作",
+    request: "提供专业音频与个性化声音。包含有声书自然人声配音、背景音乐、短剧特效音定制，以及专属生日歌曲生成、嘈杂音频降噪分离……等所有声音相关的制作委托。",
+    iconSrc: "/icons/case-music.svg"
   }
 ];
-
-function CaseVisual({ type }: { type: string }) {
-  return (
-    <svg className={`case-visual ${type}`} aria-hidden="true" viewBox="0 0 420 180" role="img">
-      {type === "text" ? (
-        <>
-          <defs>
-            <linearGradient id="case-logo-bg" x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0%" stopColor="#fff5df" />
-              <stop offset="100%" stopColor="#d7efe7" />
-            </linearGradient>
-          </defs>
-          <rect x="0" y="0" width="420" height="180" rx="22" fill="url(#case-logo-bg)" />
-          <rect x="38" y="34" width="136" height="112" rx="26" fill="#ffffff" opacity="0.88" />
-          <circle cx="106" cy="90" r="34" fill="#111111" />
-          <path d="M106 64l9 18 20 8-18 9-11 26-11-26-18-9 20-8 9-18z" fill="#ffffff" />
-          <rect x="206" y="48" width="138" height="16" rx="8" fill="#111111" opacity="0.82" />
-          <rect x="206" y="82" width="96" height="10" rx="5" fill="#627067" opacity="0.48" />
-          <rect x="206" y="106" width="132" height="10" rx="5" fill="#627067" opacity="0.34" />
-          <circle cx="340" cy="124" r="18" fill="#ef9f65" opacity="0.86" />
-        </>
-      ) : null}
-      {type === "image" ? (
-        <>
-          <defs>
-            <linearGradient id="case-poster-bg" x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0%" stopColor="#f9dfe8" />
-              <stop offset="100%" stopColor="#dbe8ff" />
-            </linearGradient>
-          </defs>
-          <rect x="0" y="0" width="420" height="180" rx="22" fill="url(#case-poster-bg)" />
-          <rect x="34" y="24" width="142" height="132" rx="18" fill="#ffffff" opacity="0.9" />
-          <rect x="58" y="46" width="94" height="14" rx="7" fill="#e84d83" opacity="0.86" />
-          <rect x="58" y="72" width="58" height="58" rx="18" fill="#f5b461" />
-          <circle cx="134" cy="100" r="30" fill="#4967d8" opacity="0.86" />
-          <rect x="210" y="38" width="142" height="96" rx="22" fill="#ffffff" opacity="0.72" />
-          <path d="M230 116l44-44 34 28 26-20 34 36H230z" fill="#2f6f5f" opacity="0.76" />
-          <circle cx="326" cy="62" r="18" fill="#f6c85f" />
-        </>
-      ) : null}
-      {type === "music" ? (
-        <>
-          <defs>
-            <linearGradient id="case-copy-bg" x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0%" stopColor="#f7efe3" />
-              <stop offset="100%" stopColor="#ffe7f2" />
-            </linearGradient>
-          </defs>
-          <rect x="0" y="0" width="420" height="180" rx="22" fill="url(#case-copy-bg)" />
-          <rect x="34" y="28" width="352" height="124" rx="24" fill="#ffffff" opacity="0.88" />
-          <rect x="62" y="54" width="142" height="14" rx="7" fill="#111111" opacity="0.82" />
-          <rect x="62" y="84" width="260" height="9" rx="5" fill="#7a6f69" opacity="0.36" />
-          <rect x="62" y="106" width="230" height="9" rx="5" fill="#7a6f69" opacity="0.3" />
-          <rect x="62" y="126" width="72" height="18" rx="9" fill="#ef7aa5" opacity="0.72" />
-          <rect x="146" y="126" width="62" height="18" rx="9" fill="#f0b56f" opacity="0.76" />
-          <path d="M338 52l12 24 26 10-24 12-14 34-14-34-24-12 26-10 12-24z" fill="#7b63d9" opacity="0.82" />
-        </>
-      ) : null}
-      {type === "video" ? (
-        <>
-          <defs>
-            <linearGradient id="case-video-bg" x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0%" stopColor="#e5f4ff" />
-              <stop offset="100%" stopColor="#fff0d6" />
-            </linearGradient>
-          </defs>
-          <rect x="0" y="0" width="420" height="180" rx="22" fill="url(#case-video-bg)" />
-          <rect x="34" y="30" width="164" height="112" rx="22" fill="#111111" opacity="0.86" />
-          <path d="M100 68l54 31-54 31V68z" fill="#ffffff" />
-          <rect x="228" y="36" width="112" height="18" rx="9" fill="#111111" opacity="0.76" />
-          <rect x="228" y="72" width="134" height="12" rx="6" fill="#4d6f8e" opacity="0.56" />
-          <rect x="228" y="100" width="96" height="12" rx="6" fill="#4d6f8e" opacity="0.38" />
-          <rect x="228" y="128" width="120" height="12" rx="6" fill="#4d6f8e" opacity="0.3" />
-        </>
-      ) : null}
-    </svg>
-  );
-}
 
 function Icon({ name }: { name: IconName }) {
   const commonProps = {
@@ -240,12 +189,49 @@ function Icon({ name }: { name: IconName }) {
     );
   }
 
-  if (name === "collapse") {
+  if (name === "sidebarCollapse") {
     return (
-      <svg {...commonProps}>
-        <path d="M4 5h16v14H4z" />
-        <path d="M9 5v14" />
-        <path d="M16 9l-3 3 3 3" />
+      <svg aria-hidden="true" className="ui-icon" fill="none" viewBox="0 0 24 24">
+        <path d="M13.5 14.5L11.5 12L13.5 9.5M11.5 12H17" stroke="currentColor" />
+        <path
+          d="M20.5 18.5V5.5C20.5 4.39543 19.6046 3.5 18.5 3.5H5.5C4.39543 3.5 3.5 4.39543 3.5 5.5V18.5C3.5 19.6046 4.39543 20.5 5.5 20.5H18.5C19.6046 20.5 20.5 19.6046 20.5 18.5Z"
+          stroke="currentColor"
+          strokeLinecap="round"
+        />
+        <path d="M8.5 3.5V20.5" stroke="currentColor" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (name === "sidebarExpand") {
+    return (
+      <svg aria-hidden="true" className="ui-icon" fill="none" viewBox="0 0 24 24">
+        <path d="M15 14.5L17 12L15 9.5M17 12H11.5" stroke="currentColor" />
+        <path
+          d="M20.5 18.5V5.5C20.5 4.39543 19.6046 3.5 18.5 3.5H5.5C4.39543 3.5 3.5 4.39543 3.5 5.5V18.5C3.5 19.6046 4.39543 20.5 5.5 20.5H18.5C19.6046 20.5 20.5 19.6046 20.5 18.5Z"
+          stroke="currentColor"
+          strokeLinecap="round"
+        />
+        <path d="M8.5 3.5V20.5" stroke="currentColor" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (name === "menu") {
+    return (
+      <svg aria-hidden="true" className="ui-icon" fill="none" viewBox="0 0 24 24">
+        <path d="M5 7H19" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+        <path d="M5 12H19" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+        <path d="M5 17H19" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+      </svg>
+    );
+  }
+
+  if (name === "close") {
+    return (
+      <svg aria-hidden="true" className="ui-icon" fill="none" viewBox="0 0 24 24">
+        <path d="M18 6L6 18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path d="M6 6L18 18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
       </svg>
     );
   }
@@ -416,6 +402,7 @@ export function OrderConsole() {
   const [pendingPaymentTaskId, setPendingPaymentTaskId] = useState<string | null>(null);
   const [pendingPaymentUrl, setPendingPaymentUrl] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+  const [readSubmissionCounts, setReadSubmissionCounts] = useState<Record<string, number>>({});
   const filterMenuRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const shouldPublishAfterLoginRef = useRef(false);
@@ -428,6 +415,72 @@ export function OrderConsole() {
   const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
   const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
+
+  function getSubmissionReadStorageKey() {
+    return SUBMISSION_READ_COUNTS_STORAGE_KEY;
+  }
+
+  function saveReadSubmissionCounts(nextCounts: Record<string, number>) {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(getSubmissionReadStorageKey(), JSON.stringify(nextCounts));
+  }
+
+  function initializeSubmissionReadCountsIfNeeded(nextTasks: PublishTask[]) {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storageKey = getSubmissionReadStorageKey();
+    if (window.localStorage.getItem(storageKey) !== null) {
+      return;
+    }
+
+    const initialCounts = nextTasks.reduce<Record<string, number>>((counts, task) => {
+      const submissionCount = getSubmissionCount(task);
+      if (submissionCount > 0) {
+        counts[task.taskId] = submissionCount;
+      }
+      return counts;
+    }, {});
+
+    window.localStorage.setItem(storageKey, JSON.stringify(initialCounts));
+    setReadSubmissionCounts(initialCounts);
+  }
+
+  function markTaskSubmissionsRead(taskId: string, count?: number) {
+    const nextCount =
+      count ??
+      getSubmissionCount(tasks.find((task) => task.taskId === taskId) || selectedTask || ({ submissionCount: 0 } as PublishTask));
+
+    if (nextCount <= 0) {
+      return;
+    }
+
+    setReadSubmissionCounts((currentCounts) => {
+      if ((currentCounts[taskId] || 0) >= nextCount) {
+        return currentCounts;
+      }
+
+      const nextCounts = {
+        ...currentCounts,
+        [taskId]: nextCount
+      };
+      saveReadSubmissionCounts(nextCounts);
+      return nextCounts;
+    });
+  }
+
+  function hasUnreadSubmissions(task: PublishTask) {
+    return getUnreadSubmissionCount(task) > 0;
+  }
+
+  function getUnreadSubmissionCount(task: PublishTask) {
+    const submissionCount = getSubmissionCount(task);
+    return Math.max(0, submissionCount - (readSubmissionCounts[task.taskId] || 0));
+  }
 
   function updateSelectedTask(taskId: string | null) {
     setSelectedTaskId(taskId);
@@ -456,6 +509,7 @@ export function OrderConsole() {
       );
       const nextTasks = data.tasks || [];
       setTasks(nextTasks);
+      initializeSubmissionReadCountsIfNeeded(nextTasks);
       setDataSource(data.source || "unknown");
       setLastRefreshAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
       return nextTasks;
@@ -496,9 +550,12 @@ export function OrderConsole() {
 
       try {
         const submissionData = await readJson<{ submissions?: Submission[] } | Submission[]>(await fetch(`/api/tasks/${taskId}/submissions`));
-        setSubmissions(Array.isArray(submissionData) ? submissionData : submissionData.submissions || []);
+        const nextSubmissions = Array.isArray(submissionData) ? submissionData : submissionData.submissions || [];
+        setSubmissions(nextSubmissions);
+        markTaskSubmissionsRead(taskId, Math.max(getSubmissionCount(task), nextSubmissions.length));
       } catch {
         setSubmissions([]);
+        markTaskSubmissionsRead(taskId, getSubmissionCount(task));
       }
 
       setLastRefreshAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
@@ -984,6 +1041,19 @@ export function OrderConsole() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const storedCounts = window.localStorage.getItem(getSubmissionReadStorageKey());
+      setReadSubmissionCounts(storedCounts ? (JSON.parse(storedCounts) as Record<string, number>) : {});
+    } catch {
+      setReadSubmissionCounts({});
+    }
+  }, []);
+
+  useEffect(() => {
     const taskIdFromUrl = new URLSearchParams(window.location.search).get("task");
     if (taskIdFromUrl) {
       setSelectedTaskId(taskIdFromUrl);
@@ -1060,16 +1130,14 @@ export function OrderConsole() {
   }, [codeCooldown]);
 
   return (
-    <main className={`studio-shell ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+    <main className={`studio-shell ${!selectedTaskId ? "home-active" : "detail-active"} ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <button
         aria-label="打开菜单"
         className="mobile-menu-button"
         type="button"
         onClick={() => setIsMenuOpen(true)}
       >
-        <span />
-        <span />
-        <span />
+        <Icon name="menu" />
         {visibleTasks.length > 0 ? <strong>{visibleTasks.length}</strong> : null}
       </button>
 
@@ -1091,7 +1159,7 @@ export function OrderConsole() {
             type="button"
             onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
           >
-            <Icon name="collapse" />
+            <Icon name={isSidebarCollapsed ? "sidebarExpand" : "sidebarCollapse"} />
           </button>
           <button className="drawer-close sidebar-close" type="button" onClick={() => setIsMenuOpen(false)}>
             收起
@@ -1144,6 +1212,7 @@ export function OrderConsole() {
                   className={`sidebar-task ${selectedTaskId === task.taskId ? "active" : ""}`}
                   key={task.taskId}
                   onClick={() => {
+                    markTaskSubmissionsRead(task.taskId);
                     updateSelectedTask(task.taskId);
                     setIsMenuOpen(false);
                   }}
@@ -1151,8 +1220,17 @@ export function OrderConsole() {
                 >
                   <span className="sidebar-task-title">{getDisplayTaskDescription(task.description)}</span>
                   <span className="sidebar-task-meta">
-                    <span>{getTaskStatusLabel(task.status)}</span>
-                    <span>{task.submissionCount || 0}接单</span>
+                    <span className="sidebar-task-submission-count" title={`${getSubmissionCount(task)} 接单`}>
+                      {getSubmissionCount(task)}
+                    </span>
+                    <span className={`sidebar-task-status ${getSidebarStatusClassName(task.status)}`}>
+                      {getTaskStatusLabel(task.status)}
+                      {hasUnreadSubmissions(task) ? (
+                        <span className="sidebar-task-unread-dot" aria-label={`${getUnreadSubmissionCount(task)} 条新投稿`}>
+                          {getUnreadSubmissionCount(task) > 9 ? "9+" : getUnreadSubmissionCount(task)}
+                        </span>
+                      ) : null}
+                    </span>
                   </span>
                 </button>
               ))
@@ -1192,7 +1270,7 @@ export function OrderConsole() {
                 <span className="nav-icon-slot">
                   <Icon name="user" />
                 </span>
-                <span className="sidebar-label">{currentUser.phone.slice(-4)}</span>
+                <span className="sidebar-label">{maskPhone(currentUser.phone)}</span>
                 <span className={`account-chevron ${isAccountMenuOpen ? "open" : ""}`}>
                   <Icon name="chevron" />
                 </span>
@@ -1210,15 +1288,15 @@ export function OrderConsole() {
 
       {isLoginOpen && !isPhoneLoggedIn ? (
         <div className="modal-layer">
-          <button className="modal-backdrop" aria-label="关闭登录弹窗" type="button" onClick={() => setIsLoginOpen(false)} />
+          <button className="modal-backdrop login-backdrop" aria-label="关闭登录弹窗" type="button" onClick={() => setIsLoginOpen(false)} />
           <section className="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
             <div className="modal-header">
               <div>
-                <h2 id="login-title">登录/注册</h2>
-                <p>登录后可以发布任务、查看交付结果和历史记录。</p>
+                <h2 id="login-title">手机号登录</h2>
+                <p>登录后可以发布任务、查看投稿和历史任务。</p>
               </div>
               <button aria-label="关闭登录弹窗" type="button" onClick={() => setIsLoginOpen(false)}>
-                ×
+                <Icon name="close" />
               </button>
             </div>
             <form className="modal-login-form" onSubmit={loginWithPhoneCode}>
@@ -1294,7 +1372,6 @@ export function OrderConsole() {
             <section className="home-entry-panel">
               <div className="home-hero-intro">
                 <h1>今天想做点什么？</h1>
-                <p>文案 · 图片 · 音乐 · 视频，你发布需求任务，多个 Agent 竞相创作，你只挑最满意的那个</p>
               </div>
 
               <form className="hero-task-card studio-composer home-composer" onSubmit={createTask} noValidate>
@@ -1385,17 +1462,14 @@ export function OrderConsole() {
             </section>
 
             <section className="case-section studio-cases">
-              <div className="section-heading">
-                <h2>大家都在发什么</h2>
-              </div>
               <div className="case-grid">
                 {exampleCases.map((item) => (
                   <article className="case-card" key={item.type}>
-                    <CaseVisual type={item.visual} />
-                    <span>{item.type}</span>
+                    <span className="case-icon" aria-hidden="true">
+                      <img src={item.iconSrc} alt="" />
+                    </span>
                     <h3>{item.title}</h3>
                     <p>{item.request}</p>
-                    <strong>{item.result}</strong>
                   </article>
                 ))}
               </div>
