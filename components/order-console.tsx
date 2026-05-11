@@ -8,7 +8,6 @@ import {
   getCloseReasonLabel,
   getEmptySubmissionText,
   getTaskStatusLabel,
-  getTaskStep,
   isSyncableTaskStatus
 } from "@/lib/task-rules";
 
@@ -69,6 +68,7 @@ type IconName =
   | "close"
   | "chevron"
   | "attachment"
+  | "download"
   | "user";
 
 const MAX_ATTACHMENTS = 5;
@@ -76,6 +76,11 @@ const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const MIN_DESCRIPTION_LENGTH = 10;
 const PENDING_PAYMENT_TASK_STORAGE_KEY = "pendingPaymentTaskId";
 const SUBMISSION_READ_COUNTS_STORAGE_KEY = "aichong:submission-read-counts:v2";
+const IMAGE_FILE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
+const VIDEO_FILE_EXTENSIONS = new Set(["mp4", "mov", "webm", "m4v", "avi"]);
+const AUDIO_FILE_EXTENSIONS = new Set(["mp3", "wav", "m4a", "aac", "ogg", "flac"]);
+const DOCUMENT_FILE_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "md", "ppt", "pptx", "xls", "xlsx", "csv"]);
+const ARCHIVE_FILE_EXTENSIONS = new Set(["zip", "rar", "7z", "tar", "gz"]);
 const isPhoneValid = (phone: string) => /^1\d{10}$/.test(phone);
 const isCodeValid = (code: string) => /^\d{6}$/.test(code);
 const maskPhone = (phone: string) => {
@@ -252,6 +257,16 @@ function Icon({ name }: { name: IconName }) {
     );
   }
 
+  if (name === "download") {
+    return (
+      <svg {...commonProps}>
+        <path d="M12 4v10" />
+        <path d="M8 10l4 4 4-4" />
+        <path d="M5 20h14" />
+      </svg>
+    );
+  }
+
   if (name === "user") {
     return (
       <svg {...commonProps}>
@@ -310,6 +325,114 @@ function getAttachmentDisplayName(index: number) {
   return `附件${index + 1}`;
 }
 
+const cp1252ReverseMap: Record<string, number> = {
+  "\u20AC": 0x80,
+  "\u201A": 0x82,
+  "\u0192": 0x83,
+  "\u201E": 0x84,
+  "\u2026": 0x85,
+  "\u2020": 0x86,
+  "\u2021": 0x87,
+  "\u02C6": 0x88,
+  "\u2030": 0x89,
+  "\u0160": 0x8a,
+  "\u2039": 0x8b,
+  "\u0152": 0x8c,
+  "\u017D": 0x8e,
+  "\u2018": 0x91,
+  "\u2019": 0x92,
+  "\u201C": 0x93,
+  "\u201D": 0x94,
+  "\u2022": 0x95,
+  "\u2013": 0x96,
+  "\u2014": 0x97,
+  "\u02DC": 0x98,
+  "\u2122": 0x99,
+  "\u0161": 0x9a,
+  "\u203A": 0x9b,
+  "\u0153": 0x9c,
+  "\u017E": 0x9e,
+  "\u0178": 0x9f
+};
+
+function repairMojibakeFileName(fileName: string) {
+  const trimmedName = fileName.trim();
+  const percentDecoded = /%[0-9a-f]{2}/i.test(trimmedName)
+    ? (() => {
+        try {
+          return decodeURIComponent(trimmedName);
+        } catch {
+          return trimmedName;
+        }
+      })()
+    : trimmedName;
+
+  if (/[\u4e00-\u9fff]/.test(percentDecoded)) {
+    return percentDecoded;
+  }
+
+  const looksMojibake = /[ÃÂ]|[æåçèäöü][\u0080-\uFFFF]?|[\u201A-\u201E\u2020-\u2022\u02C6\u02DC\u2030\u2039\u203A]/.test(percentDecoded);
+  if (!looksMojibake) {
+    return percentDecoded;
+  }
+
+  const bytes: number[] = [];
+  for (const char of percentDecoded) {
+    const code = char.charCodeAt(0);
+    const mappedByte = cp1252ReverseMap[char];
+
+    if (mappedByte) {
+      bytes.push(mappedByte);
+    } else if (code <= 0xff) {
+      bytes.push(code);
+    } else {
+      return percentDecoded;
+    }
+  }
+
+  try {
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes));
+    return /[\u4e00-\u9fff]/.test(decoded) ? decoded : percentDecoded;
+  } catch {
+    return percentDecoded;
+  }
+}
+
+function getAttachmentOriginalName(attachment: { fileName?: string }, index: number) {
+  return attachment.fileName?.trim() ? repairMojibakeFileName(attachment.fileName) : getAttachmentDisplayName(index);
+}
+
+function getFileExtension(fileName?: string) {
+  const normalizedName = fileName ? repairMojibakeFileName(fileName) : "";
+  const extension = normalizedName.split(".").pop()?.trim().toLowerCase();
+  return extension && extension !== normalizedName.toLowerCase() ? extension : "";
+}
+
+function getAttachmentKind(attachment: { fileName?: string; mimeType?: string }) {
+  const mimeType = attachment.mimeType || "";
+  const extension = getFileExtension(attachment.fileName);
+
+  if (mimeType.startsWith("image/") || IMAGE_FILE_EXTENSIONS.has(extension)) return "image";
+  if (mimeType.startsWith("video/") || VIDEO_FILE_EXTENSIONS.has(extension)) return "video";
+  if (mimeType.startsWith("audio/") || AUDIO_FILE_EXTENSIONS.has(extension)) return "audio";
+  if (DOCUMENT_FILE_EXTENSIONS.has(extension)) return "doc";
+  if (ARCHIVE_FILE_EXTENSIONS.has(extension)) return "archive";
+  return "file";
+}
+
+function getAttachmentTypeLabel(attachment: { fileName?: string; mimeType?: string }) {
+  const extension = getFileExtension(attachment.fileName);
+  if (extension) return extension.slice(0, 4).toUpperCase();
+
+  const kind = getAttachmentKind(attachment);
+  if (kind === "image") return "IMG";
+  if (kind === "video") return "VID";
+  if (kind === "audio") return "AUD";
+  if (kind === "doc") return "DOC";
+  if (kind === "archive") return "ZIP";
+  return "FILE";
+}
+
 function getAttachmentDownloadUrl(attachment: { fileUrl: string; fileName?: string }, disposition: "attachment" | "inline" = "attachment") {
   const params = new URLSearchParams({
     url: attachment.fileUrl,
@@ -317,6 +440,41 @@ function getAttachmentDownloadUrl(attachment: { fileUrl: string; fileName?: stri
     disposition
   });
   return `/api/download/submission-attachment?${params.toString()}`;
+}
+
+function AttachmentVisual({ attachment, file }: { attachment: { fileUrl?: string; fileName?: string; mimeType?: string }; file?: File }) {
+  const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
+  const kind = getAttachmentKind(attachment);
+  const isImage = kind === "image";
+
+  useEffect(() => {
+    if (!file || !isImage) {
+      setLocalImageUrl(null);
+      return;
+    }
+
+    const nextUrl = URL.createObjectURL(file);
+    setLocalImageUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [file, isImage]);
+
+  const imageUrl = isImage
+    ? localImageUrl || (attachment.fileUrl ? getAttachmentDownloadUrl({ fileUrl: attachment.fileUrl, fileName: attachment.fileName }, "inline") : "")
+    : "";
+
+  if (imageUrl) {
+    return (
+      <span className="attachment-thumb image" aria-hidden="true">
+        <img src={imageUrl} alt="" />
+      </span>
+    );
+  }
+
+  return (
+    <span className={`attachment-thumb ${kind}`} aria-hidden="true">
+      <span>{getAttachmentTypeLabel(attachment)}</span>
+    </span>
+  );
 }
 
 function isTextLikeAttachment(fileName?: string, contentType = "") {
@@ -384,6 +542,7 @@ export function OrderConsole() {
   const [isRefreshingPayment, setIsRefreshingPayment] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [codeCooldown, setCodeCooldown] = useState(0);
@@ -403,6 +562,8 @@ export function OrderConsole() {
   const [pendingPaymentUrl, setPendingPaymentUrl] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [readSubmissionCounts, setReadSubmissionCounts] = useState<Record<string, number>>({});
+  const [composerAttachmentScroll, setComposerAttachmentScroll] = useState({ canScrollLeft: false, canScrollRight: false });
+  const composerAttachmentsRef = useRef<HTMLDivElement | null>(null);
   const filterMenuRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const shouldPublishAfterLoginRef = useRef(false);
@@ -411,7 +572,6 @@ export function OrderConsole() {
   const isPhoneLoggedIn = currentUser?.authMode === "phone";
   const isPublishDisabled = isCreating || description.trim().length === 0;
   const descriptionLength = description.trim().length;
-  const selectedTaskStep = getTaskStep(selectedTask?.status);
   const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
   const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
@@ -499,6 +659,35 @@ export function OrderConsole() {
     window.history.replaceState(null, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
   }
 
+  function scrollComposerAttachments(direction: "left" | "right") {
+    const list = composerAttachmentsRef.current;
+    if (!list) return;
+
+    list.scrollBy({
+      left: direction === "left" ? -240 : 240,
+      behavior: "smooth"
+    });
+  }
+
+  function updateComposerAttachmentScrollState() {
+    const list = composerAttachmentsRef.current;
+    if (!list) {
+      setComposerAttachmentScroll({ canScrollLeft: false, canScrollRight: false });
+      return;
+    }
+
+    const maxScrollLeft = list.scrollWidth - list.clientWidth;
+    const canScroll = maxScrollLeft > 2;
+    const canScrollLeft = canScroll && list.scrollLeft > 2;
+    const canScrollRight = canScroll && list.scrollLeft < maxScrollLeft - 2;
+
+    setComposerAttachmentScroll((current) =>
+      current.canScrollLeft === canScrollLeft && current.canScrollRight === canScrollRight
+        ? current
+        : { canScrollLeft, canScrollRight }
+    );
+  }
+
   async function loadTasks() {
     setIsLoading(true);
     setError(null);
@@ -523,11 +712,14 @@ export function OrderConsole() {
   }
 
   async function loadCurrentUser() {
+    setIsAuthLoading(true);
     try {
       const user = await readJson<CurrentUser>(await fetch("/api/me"));
       setCurrentUser(user);
     } catch {
       setCurrentUser(null);
+    } finally {
+      setIsAuthLoading(false);
     }
   }
 
@@ -846,6 +1038,7 @@ export function OrderConsole() {
       );
 
       setCurrentUser(user);
+      setIsAuthLoading(false);
       setMessage(null);
       setIsLoginOpen(false);
       const shouldPublishAfterLogin = shouldPublishAfterLoginRef.current;
@@ -1058,6 +1251,16 @@ export function OrderConsole() {
     if (taskIdFromUrl) {
       setSelectedTaskId(taskIdFromUrl);
     }
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(updateComposerAttachmentScrollState);
+    return () => window.cancelAnimationFrame(frame);
+  }, [attachments.length]);
+
+  useEffect(() => {
+    window.addEventListener("resize", updateComposerAttachmentScrollState);
+    return () => window.removeEventListener("resize", updateComposerAttachmentScrollState);
   }, []);
 
   useEffect(() => {
@@ -1280,7 +1483,7 @@ export function OrderConsole() {
         </section>
       </aside>
 
-      {!isPhoneLoggedIn ? (
+      {!isAuthLoading && !isPhoneLoggedIn ? (
         <button className="studio-login-button" type="button" onClick={() => setIsLoginOpen((open) => !open)}>
           登录/注册
         </button>
@@ -1376,6 +1579,61 @@ export function OrderConsole() {
 
               <form className="hero-task-card studio-composer home-composer" onSubmit={createTask} noValidate>
                 <div className="form-body">
+                  {attachments.length > 0 ? (
+                    <div
+                      className={`composer-attachments-wrap ${composerAttachmentScroll.canScrollLeft ? "has-left-button" : ""} ${
+                        composerAttachmentScroll.canScrollRight ? "has-right-button" : ""
+                      }`}
+                    >
+                      {composerAttachmentScroll.canScrollLeft ? (
+                        <button
+                          className="composer-attachment-scroll-button left"
+                          aria-label="向左滚动附件"
+                          title="向左"
+                          type="button"
+                          onClick={() => scrollComposerAttachments("left")}
+                        >
+                          <Icon name="chevron" />
+                        </button>
+                      ) : null}
+                      <div
+                        className="attachment-list composer-attachments"
+                        ref={composerAttachmentsRef}
+                        onScroll={updateComposerAttachmentScrollState}
+                      >
+                        {attachments.map((attachment, index) => (
+                          <div className="attachment-item is-removable" key={`${attachment.fileName}-${index}`}>
+                            <AttachmentVisual attachment={attachment} file={attachment.file} />
+                            <div className="attachment-copy">
+                              <strong title={repairMojibakeFileName(attachment.fileName)}>{repairMojibakeFileName(attachment.fileName)}</strong>
+                              <span>{formatFileSize(attachment.fileSize)}</span>
+                            </div>
+                            <button
+                              className="attachment-remove-button"
+                              aria-label={`删除 ${attachment.fileName}`}
+                              title="删除"
+                              type="button"
+                              onClick={() => removeAttachment(index)}
+                            >
+                              <Icon name="close" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      {composerAttachmentScroll.canScrollRight ? (
+                        <button
+                          className="composer-attachment-scroll-button right"
+                          aria-label="向右滚动附件"
+                          title="向右"
+                          type="button"
+                          onClick={() => scrollComposerAttachments("right")}
+                        >
+                          <Icon name="chevron" />
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   <label className="textarea-field" htmlFor="description">
                     <textarea
                       id="description"
@@ -1388,13 +1646,25 @@ export function OrderConsole() {
                   </label>
 
                   <div className="task-card-controls">
-                    <label className="attachment-control" htmlFor="attachments" aria-label="上传附件">
+                    <label
+                      className="attachment-control"
+                      htmlFor="attachments"
+                      aria-label="上传附件"
+                      onClick={(event) => {
+                        if (!isPhoneLoggedIn) {
+                          event.preventDefault();
+                          setError(null);
+                          setMessage(null);
+                          setIsLoginOpen(true);
+                        }
+                      }}
+                    >
                       <Icon name="attachment" />
                       <input
                         id="attachments"
                         multiple
                         type="file"
-                        disabled={isCreating}
+                        disabled={!isPhoneLoggedIn || isCreating}
                         onChange={(event) => {
                           addAttachments(event.target.files);
                           event.target.value = "";
@@ -1420,22 +1690,6 @@ export function OrderConsole() {
                       {isCreating ? "发布中" : "发布任务 →"}
                     </button>
                   </div>
-
-                  {attachments.length > 0 ? (
-                    <div className="attachment-list">
-                      {attachments.map((attachment, index) => (
-                        <div className="attachment-item" key={`${attachment.fileName}-${index}`}>
-                          <div>
-                            <strong>{getAttachmentDisplayName(index)}</strong>
-                            <span>{formatFileSize(attachment.fileSize)}</span>
-                          </div>
-                          <button type="button" onClick={() => removeAttachment(index)}>
-                            移除
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
 
                   {pendingPaymentTaskId && pendingPaymentUrl ? (
                     <div className="payment-wait-card">
@@ -1483,39 +1737,17 @@ export function OrderConsole() {
                 ) : selectedTask ? (
                   <div className="detail-stack">
                     <div className="detail-floating-bar">
-                      <section className="progress-panel embedded compact-steps" aria-label="任务进度">
-                        {[
-                          ["提交任务", "写清需求"],
-                          ["完成付款", "任务上线"],
-                          ["查看结果", "收到交付"],
-                          ["确认采用", "完成任务"]
-                        ].map(([title, descriptionText], index) => {
-                          const step = index + 1;
-                          const isActive = step === selectedTaskStep;
-                          const isDone = step < selectedTaskStep || selectedTask.status === "COMPLETED";
-
-                          return (
-                            <div className={`progress-step ${isActive ? "active" : ""} ${isDone ? "done" : ""}`} key={title}>
-                              <span>{step}</span>
-                              <div>
-                                <strong>{title}</strong>
-                                <p>{descriptionText}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </section>
+                      {lastRefreshAt ? <span className="detail-refresh-meta">上次刷新 {lastRefreshAt}</span> : null}
                       <button
                         className="detail-refresh-button"
+                        aria-label="刷新"
+                        data-tooltip="刷新"
+                        title="刷新"
                         type="button"
                         onClick={() => loadTaskDetail(selectedTask.taskId)}
                         disabled={isDetailLoading}
                       >
-                        <span>
-                          <Icon name="activity" />
-                          {isDetailLoading ? "刷新中" : "刷新"}
-                        </span>
-                        {lastRefreshAt ? <small>上次刷新 {lastRefreshAt}</small> : null}
+                        <Icon name="activity" />
                       </button>
                     </div>
 
@@ -1559,28 +1791,40 @@ export function OrderConsole() {
 
                       {selectedTask.attachments?.length ? (
                         <div className="task-attachment-section">
-                          <h5>参考附件</h5>
                           <div className="attachment-list compact-list">
                             {selectedTask.attachments.map((attachment, index) => (
-                              <div className="attachment-item linked attachment-row" key={`${attachment.fileUrl}-${index}`}>
-                                <div>
-                                  <strong>{getAttachmentDisplayName(index)}</strong>
+                              <div
+                                className="attachment-item linked attachment-row"
+                                key={`${attachment.fileUrl}-${index}`}
+                                role="button"
+                                tabIndex={0}
+                                title="点击预览"
+                                onClick={() => openAttachmentPreview(attachment, getAttachmentOriginalName(attachment, index))}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    openAttachmentPreview(attachment, getAttachmentOriginalName(attachment, index));
+                                  }
+                                }}
+                              >
+                                <AttachmentVisual attachment={attachment} />
+                                <div className="attachment-copy">
+                                  <strong title={getAttachmentOriginalName(attachment, index)}>{getAttachmentOriginalName(attachment, index)}</strong>
                                   {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
                                 </div>
                                 <div className="attachment-actions">
                                   <button
+                                    className="attachment-download-button"
+                                    aria-label={`下载 ${getAttachmentOriginalName(attachment, index)}`}
+                                    title="下载"
                                     type="button"
-                                    onClick={() => openAttachmentPreview(attachment, getAttachmentDisplayName(index))}
-                                    disabled={previewLoadingUrl === attachment.fileUrl}
-                                  >
-                                    {previewLoadingUrl === attachment.fileUrl ? "读取中" : "预览"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => downloadAttachment(attachment)}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      downloadAttachment(attachment);
+                                    }}
                                     disabled={downloadingAttachmentUrl === attachment.fileUrl}
                                   >
-                                    {downloadingAttachmentUrl === attachment.fileUrl ? "下载中" : "下载"}
+                                    <Icon name="download" />
                                   </button>
                                 </div>
                               </div>
@@ -1625,25 +1869,38 @@ export function OrderConsole() {
                             {submission.attachments?.length ? (
                               <div className="attachment-list compact-list">
                                 {submission.attachments.map((attachment, index) => (
-                                  <div className="attachment-item linked attachment-row" key={`${attachment.fileUrl}-${index}`}>
-                                    <div>
-                                      <strong>{attachment.fileName || getAttachmentDisplayName(index)}</strong>
+                                  <div
+                                    className="attachment-item linked attachment-row"
+                                    key={`${attachment.fileUrl}-${index}`}
+                                    role="button"
+                                    tabIndex={0}
+                                    title="点击预览"
+                                    onClick={() => openAttachmentPreview(attachment)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter" || event.key === " ") {
+                                        event.preventDefault();
+                                        openAttachmentPreview(attachment);
+                                      }
+                                    }}
+                                  >
+                                    <AttachmentVisual attachment={attachment} />
+                                    <div className="attachment-copy">
+                                      <strong title={getAttachmentOriginalName(attachment, index)}>{getAttachmentOriginalName(attachment, index)}</strong>
                                       {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
                                     </div>
                                     <div className="attachment-actions">
                                       <button
+                                        className="attachment-download-button"
+                                        aria-label={`下载 ${getAttachmentOriginalName(attachment, index)}`}
+                                        title="下载"
                                         type="button"
-                                        onClick={() => openAttachmentPreview(attachment)}
-                                        disabled={previewLoadingUrl === attachment.fileUrl}
-                                      >
-                                        {previewLoadingUrl === attachment.fileUrl ? "读取中" : "预览"}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => downloadAttachment(attachment)}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          downloadAttachment(attachment);
+                                        }}
                                         disabled={downloadingAttachmentUrl === attachment.fileUrl}
                                       >
-                                        {downloadingAttachmentUrl === attachment.fileUrl ? "下载中" : "下载"}
+                                        <Icon name="download" />
                                       </button>
                                     </div>
                                   </div>
