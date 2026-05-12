@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { AppConfirmDialog, AppToast } from "@/components/app-dialog";
 import type { PublishTask, Submission } from "@/lib/caichong";
 import {
   canSelectSubmission,
@@ -31,6 +32,11 @@ type AttachmentPreviewModal = {
   kind: "image" | "text" | "unsupported";
   content?: string;
   url?: string;
+};
+
+type SelectConfirmation = {
+  taskId: string;
+  submissionId: string;
 };
 
 type CurrentUser = {
@@ -78,6 +84,11 @@ const COMPOSER_TEXTAREA_MIN_HEIGHT = 52;
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 192;
 const DESCRIPTION_TOO_SHORT_ERROR = "请输入10个字以上的需求描述";
 const PRICE_INVALID_ERROR = "请输入1-100元的报酬";
+const ATTACHMENT_RULE_TOOLTIP_ID = "attachment-rule-tooltip";
+const ATTACHMENT_RULE_COPY = "支持常见图片、文档、音视频等参考附件";
+const ATTACHMENT_LIMIT_COPY = "单个附件最大 10MB, 最多 5 个";
+const ATTACHMENT_TOO_MANY_ERROR = `最多上传 ${MAX_ATTACHMENTS} 个附件。如需调整，请先删除已选附件。`;
+const ATTACHMENT_TOO_LARGE_ERROR = "附件最大不能超过 10MB";
 const PENDING_PAYMENT_TASK_STORAGE_KEY = "pendingPaymentTaskId";
 const SUBMISSION_READ_COUNTS_STORAGE_KEY = "aichong:submission-read-counts:v2";
 const IMAGE_FILE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
@@ -515,6 +526,19 @@ function isImageLikeAttachment(fileName?: string, contentType = "") {
   );
 }
 
+function isKnownUnsupportedPreviewAttachment(attachment: UploadedAttachment) {
+  if (isTextLikeAttachment(attachment.fileName, attachment.mimeType) || isImageLikeAttachment(attachment.fileName, attachment.mimeType)) {
+    return false;
+  }
+
+  const kind = getAttachmentKind(attachment);
+  return kind === "video" || kind === "audio" || kind === "doc" || kind === "archive";
+}
+
+function isAttachmentValidationError(message?: string | null) {
+  return Boolean(message && (message === ATTACHMENT_TOO_MANY_ERROR || message === ATTACHMENT_TOO_LARGE_ERROR));
+}
+
 function getDisplayTaskDescription(description: string) {
   return description
     .replace(/^真实接口联调测试：?/, "")
@@ -563,6 +587,9 @@ export function OrderConsole() {
   const [uploadProgressText, setUploadProgressText] = useState<string | null>(null);
   const [selectingSubmissionId, setSelectingSubmissionId] = useState<string | null>(null);
   const [attachmentPreviewModal, setAttachmentPreviewModal] = useState<AttachmentPreviewModal | null>(null);
+  const [selectConfirmation, setSelectConfirmation] = useState<SelectConfirmation | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isAttachmentTooltipSuppressed, setIsAttachmentTooltipSuppressed] = useState(false);
   const [previewLoadingUrl, setPreviewLoadingUrl] = useState<string | null>(null);
   const [downloadingAttachmentUrl, setDownloadingAttachmentUrl] = useState<string | null>(null);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
@@ -588,12 +615,14 @@ export function OrderConsole() {
   const isPublishDisabled = isCreating || description.trim().length === 0;
   const shouldShowDescriptionError = error === DESCRIPTION_TOO_SHORT_ERROR;
   const shouldShowPriceError = error === PRICE_INVALID_ERROR;
-  const shouldShowComposerValidationError = shouldShowDescriptionError || shouldShowPriceError;
+  const shouldShowAttachmentError = isAttachmentValidationError(error);
+  const shouldShowComposerValidationError = shouldShowDescriptionError || shouldShowPriceError || shouldShowAttachmentError;
   const descriptionLength = description.trim().length;
   const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
   const shouldShowSidebarOrders = Boolean(isPhoneLoggedIn && hasLoadedTasks && visibleTasks.length > 0);
   const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
+  const hasUnreadSubmissionsAcrossTasks = visibleTasks.some(hasUnreadSubmissions);
 
   function resizeDescriptionTextarea() {
     const textarea = descriptionTextareaRef.current;
@@ -620,6 +649,10 @@ export function OrderConsole() {
     }
 
     window.localStorage.setItem(getSubmissionReadStorageKey(), JSON.stringify(nextCounts));
+  }
+
+  function showToast(messageText: string) {
+    setToastMessage(messageText);
   }
 
   function initializeSubmissionReadCountsIfNeeded(nextTasks: PublishTask[]) {
@@ -844,6 +877,12 @@ export function OrderConsole() {
   }
 
   async function openAttachmentPreview(attachment: UploadedAttachment, title = "附件预览") {
+    if (isKnownUnsupportedPreviewAttachment(attachment)) {
+      setError(null);
+      showToast("请下载查看");
+      return;
+    }
+
     setPreviewLoadingUrl(attachment.fileUrl);
     setError(null);
 
@@ -876,12 +915,7 @@ export function OrderConsole() {
         return;
       }
 
-      setAttachmentPreviewModal({
-        attachment,
-        title,
-        kind: "unsupported",
-        content: "这个附件暂时不能在线预览，请下载后查看。"
-      });
+      showToast("请下载查看");
     } catch (previewError) {
       setError(previewError instanceof Error ? previewError.message : "附件预览失败");
     } finally {
@@ -917,11 +951,7 @@ export function OrderConsole() {
   }
 
   async function selectSubmission(taskId: string, submissionId: string) {
-    const confirmed = window.confirm("采用结果后，这条任务会进入完成状态。确认采用这个结果吗？");
-    if (!confirmed) {
-      return;
-    }
-
+    setSelectConfirmation(null);
     setSelectingSubmissionId(submissionId);
     setMessage(null);
     setError(null);
@@ -1112,15 +1142,16 @@ export function OrderConsole() {
 
     const nextFiles = Array.from(files);
     const accepted: PendingAttachment[] = [];
+    let validationError: string | null = null;
 
     for (const file of nextFiles) {
       if (attachments.length + accepted.length >= MAX_ATTACHMENTS) {
-        setError(`最多只能上传 ${MAX_ATTACHMENTS} 个附件`);
+        validationError = ATTACHMENT_TOO_MANY_ERROR;
         break;
       }
 
       if (file.size > MAX_ATTACHMENT_SIZE) {
-        setError(`${file.name} 超过 10MB，已跳过`);
+        validationError = ATTACHMENT_TOO_LARGE_ERROR;
         continue;
       }
 
@@ -1135,10 +1166,13 @@ export function OrderConsole() {
     if (accepted.length > 0) {
       setAttachments((current) => [...current, ...accepted]);
     }
+
+    setError((currentError) => validationError || (isAttachmentValidationError(currentError) ? null : currentError));
   }
 
   function removeAttachment(index: number) {
     setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setError((currentError) => (isAttachmentValidationError(currentError) ? null : currentError));
   }
 
   function updatePriceInput(value: string) {
@@ -1379,6 +1413,15 @@ export function OrderConsole() {
     return () => window.clearTimeout(timer);
   }, [codeCooldown]);
 
+  useEffect(() => {
+    if (!toastMessage) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setToastMessage(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toastMessage]);
+
   return (
     <main className={`studio-shell ${!selectedTaskId ? "home-active" : "detail-active"} ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <button
@@ -1388,8 +1431,26 @@ export function OrderConsole() {
         onClick={() => setIsMenuOpen(true)}
       >
         <Icon name="menu" />
-        {visibleTasks.length > 0 ? <strong>{visibleTasks.length}</strong> : null}
+        {hasUnreadSubmissionsAcrossTasks ? <span className="mobile-menu-unread-dot" aria-label="有新投稿" /> : null}
       </button>
+
+      <AppToast message={toastMessage} />
+
+      <AppConfirmDialog
+        open={Boolean(selectConfirmation)}
+        title="确认采用这个投稿吗？"
+        description="确认后，系统将按此结果进行结算"
+        confirmLabel="确认采用"
+        cancelLabel="再看看"
+        isConfirming={Boolean(selectingSubmissionId)}
+        onCancel={() => setSelectConfirmation(null)}
+        onConfirm={() => {
+          if (!selectConfirmation) {
+            return;
+          }
+          void selectSubmission(selectConfirmation.taskId, selectConfirmation.submissionId);
+        }}
+      />
 
       {isMenuOpen ? <button className="drawer-backdrop" aria-label="关闭菜单" type="button" onClick={() => setIsMenuOpen(false)} /> : null}
 
@@ -1458,7 +1519,6 @@ export function OrderConsole() {
                     className={`sidebar-task ${selectedTaskId === task.taskId ? "active" : ""}`}
                     key={task.taskId}
                     onClick={() => {
-                      markTaskSubmissionsRead(task.taskId);
                       updateSelectedTask(task.taskId);
                       setIsMenuOpen(false);
                     }}
@@ -1655,7 +1715,7 @@ export function OrderConsole() {
                             <button
                               className="attachment-remove-button"
                               aria-label={`删除 ${attachment.fileName}`}
-                              title="删除"
+                              title="发布前可删除重传"
                               type="button"
                               onClick={() => removeAttachment(index)}
                             >
@@ -1697,47 +1757,68 @@ export function OrderConsole() {
                   </label>
 
                   <div className="task-card-controls">
-                    <label
-                      className="attachment-control"
-                      htmlFor="attachments"
-                      aria-label="上传附件"
-                      onClick={(event) => {
-                        if (!isPhoneLoggedIn) {
-                          event.preventDefault();
-                          setError(null);
-                          setMessage(null);
-                          setIsLoginOpen(true);
+                    <div
+                      className={`attachment-control-group ${isAttachmentTooltipSuppressed ? "is-tooltip-suppressed" : ""}`}
+                      onMouseLeave={() => setIsAttachmentTooltipSuppressed(false)}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                          setIsAttachmentTooltipSuppressed(false);
                         }
                       }}
                     >
-                      <Icon name="attachment" />
-                      <input
-                        id="attachments"
-                        multiple
-                        type="file"
-                        disabled={isCreating}
+                      <label
+                        className="attachment-control"
+                        htmlFor="attachments"
+                        aria-label="上传附件"
+                        aria-describedby={ATTACHMENT_RULE_TOOLTIP_ID}
                         onClick={(event) => {
+                          setIsAttachmentTooltipSuppressed(true);
                           if (!isPhoneLoggedIn) {
                             event.preventDefault();
-                            event.stopPropagation();
                             setError(null);
                             setMessage(null);
                             setIsLoginOpen(true);
                           }
                         }}
-                        onChange={(event) => {
-                          if (!isPhoneLoggedIn) {
-                            event.target.value = "";
-                            setError(null);
-                            setMessage(null);
-                            setIsLoginOpen(true);
-                            return;
-                          }
-                          addAttachments(event.target.files);
-                          event.target.value = "";
-                        }}
-                      />
-                    </label>
+                      >
+                        <Icon name="attachment" />
+                        <input
+                          id="attachments"
+                          multiple
+                          type="file"
+                          disabled={isCreating}
+                          onClick={(event) => {
+                            setIsAttachmentTooltipSuppressed(true);
+                            if (!isPhoneLoggedIn) {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setError(null);
+                              setMessage(null);
+                              setIsLoginOpen(true);
+                            }
+                          }}
+                          onChange={(event) => {
+                            const input = event.currentTarget;
+                            if (!isPhoneLoggedIn) {
+                              input.value = "";
+                              input.blur();
+                              setError(null);
+                              setMessage(null);
+                              setIsLoginOpen(true);
+                              return;
+                            }
+                            addAttachments(input.files);
+                            input.value = "";
+                            input.blur();
+                          }}
+                        />
+                      </label>
+                      <span className="attachment-rule-tooltip" id={ATTACHMENT_RULE_TOOLTIP_ID} role="tooltip">
+                        {ATTACHMENT_RULE_COPY}
+                        <br />
+                        {ATTACHMENT_LIMIT_COPY}
+                      </span>
+                    </div>
                     <div className="budget-control-group">
                       <label className="budget-control" htmlFor="price" aria-describedby="price-rule-tooltip">
                         ¥
@@ -1763,9 +1844,9 @@ export function OrderConsole() {
                         />
                       </label>
                       <span className="budget-rule-tooltip" id="price-rule-tooltip" role="tooltip">
-                        平台客单价1-100元。
+                        平台客单价 1-100 元
                         <br />
-                        通常报酬越高，越能收到更高质量的投稿
+                        通常报酬越高，越能收到更多投稿
                       </span>
                     </div>
                     <button className="publish-button" type="submit" disabled={isPublishDisabled}>
@@ -1826,11 +1907,11 @@ export function OrderConsole() {
                       <button
                         className="detail-refresh-button"
                         aria-label="刷新"
-                        data-tooltip="刷新"
-                        title="刷新"
+                        data-tooltip="同步全部"
+                        title="同步全部任务"
                         type="button"
-                        onClick={() => loadTaskDetail(selectedTask.taskId)}
-                        disabled={isDetailLoading}
+                        onClick={() => syncHeartbeat()}
+                        disabled={isDetailLoading || isSyncing}
                       >
                         <Icon name="activity" />
                       </button>
@@ -1994,7 +2075,7 @@ export function OrderConsole() {
                                 <button
                                   className="btn primary"
                                   type="button"
-                                  onClick={() => selectSubmission(selectedTask.taskId, submission.submissionId)}
+                                  onClick={() => setSelectConfirmation({ taskId: selectedTask.taskId, submissionId: submission.submissionId })}
                                   disabled={Boolean(selectingSubmissionId) || submission.selected}
                                 >
                                   {submission.selected ? "已采用" : selectingSubmissionId === submission.submissionId ? "采用中" : "采用投稿"}
