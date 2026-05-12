@@ -22,7 +22,15 @@ type OrderUserRow = {
   user_id: string;
 };
 
-const internalTestPhones = new Set(["13700000000", "13800000000", "13900000000"]);
+const internalTestPhones = new Set([
+  "10000000000",
+  "1111111111",
+  "11111111111",
+  "12222222222",
+  "13700000000",
+  "13800000000",
+  "13900000000"
+]);
 const internalTestUserIds = new Set(["00000000-0000-4000-8000-000000000001"]);
 
 function isInternalTestProfile(profile: Pick<ProfileRow, "id" | "phone" | "display_name">) {
