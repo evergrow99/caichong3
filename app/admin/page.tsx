@@ -117,7 +117,7 @@ export default async function AdminPage() {
 
       <section className="admin-metrics">
         <div className="metric-card">
-          <span>注册用户</span>
+          <span>真实用户</span>
           <strong>{users.length}</strong>
         </div>
         <div className="metric-card">
@@ -153,7 +153,7 @@ export default async function AdminPage() {
       <section className="panel admin-panel admin-users-panel">
         <div className="panel-header">
           <h2>用户列表</h2>
-          <p>查看已注册用户的手机号、注册时间、最近登录时间和发单数量。</p>
+          <p>查看真实用户的手机号、注册时间、最近登录时间和发单数量；测试账号不计入统计。</p>
         </div>
 
         <div className="admin-table-wrap">

@@ -22,20 +22,33 @@ type OrderUserRow = {
   user_id: string;
 };
 
+const internalTestPhones = new Set(["13700000000", "13800000000", "13900000000"]);
+const internalTestUserIds = new Set(["00000000-0000-4000-8000-000000000001"]);
+
+function isInternalTestProfile(profile: Pick<ProfileRow, "id" | "phone" | "display_name">) {
+  return (
+    internalTestUserIds.has(profile.id) ||
+    Boolean(profile.phone && internalTestPhones.has(profile.phone)) ||
+    profile.display_name === "演示用户"
+  );
+}
+
 function mapAdminUsers(profileRows: ProfileRow[], orderRows: OrderUserRow[]): AdminUser[] {
   const orderCounts = orderRows.reduce<Record<string, number>>((counts, row) => {
     counts[row.user_id] = (counts[row.user_id] || 0) + 1;
     return counts;
   }, {});
 
-  return profileRows.map((profile) => ({
-    id: profile.id,
-    phone: profile.phone || undefined,
-    displayName: profile.display_name || undefined,
-    createdAt: profile.created_at || undefined,
-    lastLoginAt: profile.last_login_at || undefined,
-    orderCount: orderCounts[profile.id] || 0
-  }));
+  return profileRows
+    .filter((profile) => !isInternalTestProfile(profile))
+    .map((profile) => ({
+      id: profile.id,
+      phone: profile.phone || undefined,
+      displayName: profile.display_name || undefined,
+      createdAt: profile.created_at || undefined,
+      lastLoginAt: profile.last_login_at || undefined,
+      orderCount: orderCounts[profile.id] || 0
+    }));
 }
 
 async function upsertProfile(user: CurrentUser, markLogin: boolean) {
