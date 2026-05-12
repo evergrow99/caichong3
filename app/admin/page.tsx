@@ -7,6 +7,7 @@ import { listOperationLogs } from "@/lib/operation-log";
 import { getReadinessReport } from "@/lib/readiness";
 import { listAdminOrders } from "@/lib/order-repository";
 import { getTaskStatusLabel, taskStatusRules } from "@/lib/task-rules";
+import { listAdminUsers } from "@/lib/user-profile";
 
 function getOrderAction(order: { status: string; submissionCount: number }) {
   if (order.status === "PENDING_PAYMENT") {
@@ -63,7 +64,12 @@ export default async function AdminPage() {
     );
   }
 
-  const [{ orders, summary }, operationLogs, readiness] = await Promise.all([listAdminOrders(), listOperationLogs(20), getReadinessReport()]);
+  const [{ orders, summary }, users, operationLogs, readiness] = await Promise.all([
+    listAdminOrders(),
+    listAdminUsers(),
+    listOperationLogs(20),
+    getReadinessReport()
+  ]);
   const actionOrders = orders.filter((order) => order.isRealCaichongTask && getOrderAction(order)).slice(0, 5);
 
   return (
@@ -111,6 +117,10 @@ export default async function AdminPage() {
 
       <section className="admin-metrics">
         <div className="metric-card">
+          <span>注册用户</span>
+          <strong>{users.length}</strong>
+        </div>
+        <div className="metric-card">
           <span>真实订单</span>
           <strong>{summary.totalOrders}</strong>
         </div>
@@ -137,6 +147,43 @@ export default async function AdminPage() {
         <div className="metric-card">
           <span>旧测试单</span>
           <strong>{summary.legacyOrders}</strong>
+        </div>
+      </section>
+
+      <section className="panel admin-panel admin-users-panel">
+        <div className="panel-header">
+          <h2>用户列表</h2>
+          <p>查看已注册用户的手机号、注册时间、最近登录时间和发单数量。</p>
+        </div>
+
+        <div className="admin-table-wrap">
+          {users.length > 0 ? (
+            <table className="admin-table admin-users-table">
+              <thead>
+                <tr>
+                  <th>手机号</th>
+                  <th>注册时间</th>
+                  <th>最近登录</th>
+                  <th>发单数量</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((adminUser) => (
+                  <tr key={adminUser.id}>
+                    <td>
+                      <strong>{adminUser.phone || "-"}</strong>
+                      {adminUser.displayName ? <span>{adminUser.displayName}</span> : null}
+                    </td>
+                    <td>{formatDate(adminUser.createdAt)}</td>
+                    <td>{formatDate(adminUser.lastLoginAt)}</td>
+                    <td>{adminUser.orderCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="empty-state">还没有用户数据。</div>
+          )}
         </div>
       </section>
 

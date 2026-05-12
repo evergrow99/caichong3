@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     }
 
     const user = createDevPhoneUser(phone);
-    await ensureUserProfile(user);
+    await ensureUserProfile(user, { markLogin: true });
 
     const response = NextResponse.json(user);
     response.cookies.set(AUTH_COOKIE_NAME, phone, {

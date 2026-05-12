@@ -4731,7 +4731,7 @@ textarea:focus-visible {
 
 .admin-metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -4784,6 +4784,10 @@ textarea:focus-visible {
 
 .admin-panel {
   overflow: hidden;
+}
+
+.admin-users-panel {
+  margin-bottom: 18px;
 }
 
 .action-orders-panel {
@@ -4920,6 +4924,10 @@ textarea:focus-visible {
   min-width: 880px;
   border-collapse: collapse;
   font-family: ui-sans-serif, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.admin-users-table {
+  min-width: 720px;
 }
 
 .admin-table th,
