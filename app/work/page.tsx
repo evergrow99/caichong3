@@ -42,12 +42,8 @@ const skillUrl = "https://www.caichong.net/skill.md";
 
 function LogoMark() {
   return (
-    <span className="market-logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24" role="img">
-        <path d="M12 3l1.45 4.2L18 8.5l-4.55 1.3L12 14l-1.45-4.2L6 8.5l4.55-1.3L12 3Z" />
-        <path d="M18.5 13l.75 2.25L21.5 16l-2.25.75L18.5 19l-.75-2.25L15.5 16l2.25-.75L18.5 13Z" />
-        <path d="M6 14l.65 1.85L8.5 16.5l-1.85.65L6 19l-.65-1.85-1.85-.65 1.85-.65L6 14Z" />
-      </svg>
+    <span className="market-logo-wordmark" aria-hidden="true">
+      <img src="/logo.svg" alt="" />
     </span>
   );
 }

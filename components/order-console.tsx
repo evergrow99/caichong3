@@ -74,7 +74,10 @@ type IconName =
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const MIN_DESCRIPTION_LENGTH = 10;
+const COMPOSER_TEXTAREA_MIN_HEIGHT = 52;
+const COMPOSER_TEXTAREA_MAX_HEIGHT = 192;
 const DESCRIPTION_TOO_SHORT_ERROR = "请输入10个字以上的需求描述";
+const PRICE_INVALID_ERROR = "请输入1-100元的报酬";
 const PENDING_PAYMENT_TASK_STORAGE_KEY = "pendingPaymentTaskId";
 const SUBMISSION_READ_COUNTS_STORAGE_KEY = "aichong:submission-read-counts:v2";
 const IMAGE_FILE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
@@ -282,6 +285,15 @@ function Icon({ name }: { name: IconName }) {
       <path d="M10 17l5-5-5-5" />
       <path d="M15 12H3" />
       <path d="M14 4h4a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-4" />
+    </svg>
+  );
+}
+
+function HeartbeatLoadingIcon() {
+  return (
+    <svg aria-hidden="true" className="heartbeat-loader" fill="none" viewBox="0 0 32 32">
+      <path className="heartbeat-loader-glow" d="M5 16h6l2.4-7 5.2 14 2.4-7h6" pathLength={1} />
+      <path className="heartbeat-loader-line" d="M5 16h6l2.4-7 5.2 14 2.4-7h6" pathLength={1} />
     </svg>
   );
 }
@@ -524,7 +536,7 @@ async function readJson<T>(response: Response): Promise<T> {
 
 export function OrderConsole() {
   const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("10");
+  const [price, setPrice] = useState("");
   const [loginPhone, setLoginPhone] = useState("");
   const [loginCode, setLoginCode] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
@@ -566,6 +578,7 @@ export function OrderConsole() {
   const [readSubmissionCounts, setReadSubmissionCounts] = useState<Record<string, number>>({});
   const [composerAttachmentScroll, setComposerAttachmentScroll] = useState({ canScrollLeft: false, canScrollRight: false });
   const composerAttachmentsRef = useRef<HTMLDivElement | null>(null);
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const filterMenuRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const shouldPublishAfterLoginRef = useRef(false);
@@ -574,11 +587,28 @@ export function OrderConsole() {
   const isPhoneLoggedIn = currentUser?.authMode === "phone";
   const isPublishDisabled = isCreating || description.trim().length === 0;
   const shouldShowDescriptionError = error === DESCRIPTION_TOO_SHORT_ERROR;
+  const shouldShowPriceError = error === PRICE_INVALID_ERROR;
+  const shouldShowComposerValidationError = shouldShowDescriptionError || shouldShowPriceError;
   const descriptionLength = description.trim().length;
   const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
   const shouldShowSidebarOrders = Boolean(isPhoneLoggedIn && hasLoadedTasks && visibleTasks.length > 0);
   const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
+
+  function resizeDescriptionTextarea() {
+    const textarea = descriptionTextareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "auto";
+    const nextHeight = Math.min(
+      Math.max(textarea.scrollHeight, COMPOSER_TEXTAREA_MIN_HEIGHT),
+      COMPOSER_TEXTAREA_MAX_HEIGHT
+    );
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > COMPOSER_TEXTAREA_MAX_HEIGHT ? "auto" : "hidden";
+  }
 
   function getSubmissionReadStorageKey() {
     return SUBMISSION_READ_COUNTS_STORAGE_KEY;
@@ -1132,6 +1162,10 @@ export function OrderConsole() {
   }
 
   function normalizePriceInput() {
+    if (price.trim() === "") {
+      return;
+    }
+
     const numericPrice = Number(price);
     if (!Number.isFinite(numericPrice) || numericPrice < 1) {
       setPrice("1");
@@ -1169,7 +1203,7 @@ export function OrderConsole() {
     }
 
     if (!Number.isFinite(numericPrice) || numericPrice < 1 || numericPrice > 100) {
-      setError("请输入1-100元的报酬");
+      setError(PRICE_INVALID_ERROR);
       return;
     }
 
@@ -1241,6 +1275,10 @@ export function OrderConsole() {
     loadConfigHealth();
     loadTasks();
   }, []);
+
+  useEffect(() => {
+    resizeDescriptionTextarea();
+  }, [description]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1358,12 +1396,8 @@ export function OrderConsole() {
       <aside className={`studio-sidebar ${isMenuOpen ? "open" : ""}`}>
         <div className="studio-brand-block">
           <Link className="studio-brand" href="/" onClick={() => setIsMenuOpen(false)}>
-            <span className="prototype-logo">
-              <Icon name="logo" />
-            </span>
-            <span className="sidebar-label">
-              <strong>AICHONG</strong>
-            </span>
+            <img className="brand-logo-image brand-logo-wordmark" src="/logo.svg" alt="AICHONG" />
+            <img className="brand-logo-image brand-logo-mark" src="/logo-mark.svg" alt="" aria-hidden="true" />
           </Link>
           <button
             aria-label={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
@@ -1373,8 +1407,8 @@ export function OrderConsole() {
           >
             <Icon name={isSidebarCollapsed ? "sidebarExpand" : "sidebarCollapse"} />
           </button>
-          <button className="drawer-close sidebar-close" type="button" onClick={() => setIsMenuOpen(false)}>
-            收起
+          <button className="drawer-close sidebar-close" aria-label="收起侧栏" title="收起" type="button" onClick={() => setIsMenuOpen(false)}>
+            <Icon name="sidebarCollapse" />
           </button>
         </div>
 
@@ -1647,6 +1681,7 @@ export function OrderConsole() {
                   <label className="textarea-field" htmlFor="description">
                     <textarea
                       id="description"
+                      ref={descriptionTextareaRef}
                       aria-label="任务说明"
                       value={description}
                       onChange={(event) => {
@@ -1703,21 +1738,36 @@ export function OrderConsole() {
                         }}
                       />
                     </label>
-                    <label className="budget-control" htmlFor="price">
-                      ¥
-                      <input
-                        id="price"
-                        inputMode="decimal"
-                        min="1"
-                        max="100"
-                        step="0.1"
-                        type="text"
-                        value={price}
-                        onBlur={normalizePriceInput}
-                        onChange={(event) => updatePriceInput(event.target.value)}
-                        disabled={isCreating}
-                      />
-                    </label>
+                    <div className="budget-control-group">
+                      <label className="budget-control" htmlFor="price" aria-describedby="price-rule-tooltip">
+                        ¥
+                        <input
+                          id="price"
+                          inputMode="decimal"
+                          min="1"
+                          max="100"
+                          step="0.1"
+                          type="text"
+                          name="aichong-task-budget"
+                          autoComplete="off"
+                          value={price}
+                          placeholder="1-100"
+                          onBlur={normalizePriceInput}
+                          onChange={(event) => {
+                            updatePriceInput(event.target.value);
+                            if (error === PRICE_INVALID_ERROR) {
+                              setError(null);
+                            }
+                          }}
+                          disabled={isCreating}
+                        />
+                      </label>
+                      <span className="budget-rule-tooltip" id="price-rule-tooltip" role="tooltip">
+                        平台客单价1-100元。
+                        <br />
+                        通常报酬越高，越能收到更高质量的投稿
+                      </span>
+                    </div>
                     <button className="publish-button" type="submit" disabled={isPublishDisabled}>
                       {isCreating ? "发布中" : "发布任务 →"}
                     </button>
@@ -1742,10 +1792,10 @@ export function OrderConsole() {
 
                   {uploadProgressText ? <div className="message neutral">{uploadProgressText}</div> : null}
                   {message ? <div className="message neutral">{message}</div> : null}
-                  {error && !shouldShowDescriptionError ? <div className="message error">{error}</div> : null}
+                  {error && !shouldShowComposerValidationError ? <div className="message error">{error}</div> : null}
                 </div>
               </form>
-              {shouldShowDescriptionError ? <div className="composer-validation-message">{DESCRIPTION_TOO_SHORT_ERROR}</div> : null}
+              {shouldShowComposerValidationError ? <div className="composer-validation-message">{error}</div> : null}
             </section>
 
             <section className="case-section studio-cases">
@@ -1766,7 +1816,9 @@ export function OrderConsole() {
           <section className="detail-stage">
               <div className="content-body">
                 {isDetailLoading ? (
-                  <div className="empty-state">正在读取任务详情和交付结果...</div>
+                  <div className="detail-loading-state" role="status" aria-label="正在读取任务详情和交付结果">
+                    <HeartbeatLoadingIcon />
+                  </div>
                 ) : selectedTask ? (
                   <div className="detail-stack">
                     <div className="detail-floating-bar">
