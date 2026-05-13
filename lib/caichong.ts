@@ -29,6 +29,12 @@ export type PublishTask = {
   closeReason?: string;
 };
 
+export type ExploreTask = PublishTask & {
+  totalPrice?: number;
+  bonusCount?: number;
+  bonusTotal?: number;
+};
+
 export type Submission = {
   submissionId: string;
   taskId?: string;
@@ -93,6 +99,9 @@ type RawTask = PublishTask & {
   selectionDeadline?: string | null;
   paidAt?: string | null;
   price?: number | string;
+  totalPrice?: number | string;
+  bonusCount?: number | null;
+  bonusTotal?: number | string | null;
   _count?: {
     submissions?: number;
   };
@@ -167,6 +176,16 @@ function normalizeTask(task: RawTask): PublishTask {
     updatedAt: task.updatedAt || undefined,
     deadlineAt: resolveTaskDeadlineAt(task),
     submissionCount: task.submissionCount ?? task._count?.submissions ?? 0
+  };
+}
+
+function normalizeExploreTask(task: RawTask): ExploreTask {
+  const normalizedTask = normalizeTask(task);
+  return {
+    ...normalizedTask,
+    totalPrice: Number(task.totalPrice || normalizedTask.price || 0),
+    bonusCount: task.bonusCount || 0,
+    bonusTotal: Number(task.bonusTotal || 0)
   };
 }
 
@@ -322,6 +341,20 @@ export function createCaichongClient(options: CaichongClientOptions = {}) {
         pageSize: number;
         totalPages: number;
       }>("agent.events", input, options);
+    },
+    async listExploreTasks(input: { page?: number; pageSize?: number } = {}) {
+      const data = await trpcQuery<{
+        tasks: RawTask[];
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+      }>("explore_task.list", input, options);
+
+      return {
+        ...data,
+        tasks: data.tasks.map(normalizeExploreTask)
+      };
     },
     ackEvents(eventIds: number[]) {
       return trpcMutation<{ ok?: boolean }>("agent.eventsAck", { eventIds }, options);

@@ -60,6 +60,26 @@ type ConfigHealth = {
   };
 };
 
+type PlatformActivityItem = {
+  taskId: string;
+  description: string;
+  price: number;
+  status: string;
+  createdAt?: string;
+};
+
+type PlatformActivitySummary = {
+  todayOrderCount: number;
+  monthOrderCount: number;
+  totalOrderCount: number;
+  todayOrderAmount: number;
+  monthOrderAmount: number;
+  totalOrderAmount: number;
+  recentOrders: PlatformActivityItem[];
+  lastSyncedAt?: string;
+  source: "caichong_observed" | "unavailable";
+};
+
 type TaskFilter = "all" | "ACTIVE" | "PENDING_SELECTION" | "COMPLETED" | "CLOSED";
 type IconName =
   | "logo"
@@ -546,6 +566,66 @@ function getDisplayTaskDescription(description: string) {
     .replace("这是平台联调使用的小额测试任务。", "这是一条小额测试任务。");
 }
 
+function formatActivityAmount(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "¥0";
+  }
+
+  if (value >= 10000) {
+    const amount = value / 10000;
+    return `¥${Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(1)}万`;
+  }
+
+  return `¥${Math.round(value).toLocaleString("zh-CN")}`;
+}
+
+function formatActivityTime(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+
+  if (diffMinutes < 1) return "刚刚";
+  if (diffMinutes < 60) return `${diffMinutes}分钟前`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}小时前`;
+
+  return formatDateTimeToMinute(value);
+}
+
+function getActivityDescription(description: string) {
+  const normalized = getPublicActivityDescription(description).replace(/\s+/g, " ").trim();
+  if (normalized.length <= 30) {
+    return normalized || "新的创作任务";
+  }
+
+  return `${normalized.slice(0, 30)}...`;
+}
+
+function getPublicActivityDescription(description: string) {
+  return getDisplayTaskDescription(description)
+    .replace(/caichong\.net/gi, "平台")
+    .replace(/caichong/gi, "平台")
+    .replace(/才虫/g, "平台")
+    .replace(/agent/gi, "服务方")
+    .replace(/外挂/g, "辅助");
+}
+
+function getActivityCategory(description: string) {
+  const text = description.toLowerCase();
+  if (/文案|文章|脚本|总结|回复|攻略|标题|小红书|公众号/.test(text)) return "文案";
+  if (/图|图片|海报|logo|头像|主图|修图|设计|插画/.test(text)) return "图片";
+  if (/音频|配音|声音|音乐|歌曲|降噪|录音/.test(text)) return "声音";
+  if (/视频|剪辑|字幕|vlog|数字人|短片|混剪/.test(text)) return "视频";
+  return "任务";
+}
+
 function isSyncableTask(task: PublishTask) {
   return isSyncableTaskStatus(task.status);
 }
@@ -556,6 +636,82 @@ async function readJson<T>(response: Response): Promise<T> {
     throw new Error(data.error || "请求失败");
   }
   return data as T;
+}
+
+function PlatformActivityPanel({
+  activity,
+  isLoading,
+  isPaused
+}: {
+  activity: PlatformActivitySummary | null;
+  isLoading: boolean;
+  isPaused: boolean;
+}) {
+  const recentOrders = activity?.recentOrders || [];
+  const shouldShowTotalMetric = (activity?.totalOrderCount || 0) > (activity?.monthOrderCount || 0);
+  const [activeOrderIndex, setActiveOrderIndex] = useState(0);
+  const activeOrder = recentOrders[activeOrderIndex] || recentOrders[0];
+
+  useEffect(() => {
+    if (recentOrders.length <= 1 || isPaused) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setActiveOrderIndex((currentIndex) => (currentIndex + 1) % recentOrders.length);
+    }, 7000);
+
+    return () => window.clearInterval(timer);
+  }, [recentOrders.length, isPaused]);
+
+  useEffect(() => {
+    if (activeOrderIndex >= recentOrders.length) {
+      setActiveOrderIndex(0);
+    }
+  }, [activeOrderIndex, recentOrders.length]);
+
+  return (
+    <aside className="platform-activity-panel" aria-label="才虫公开市场发单动态">
+      <div className={`platform-metric-grid ${shouldShowTotalMetric ? "has-total" : ""}`} aria-busy={isLoading}>
+        <div className="platform-metric primary">
+          <span>今日发单</span>
+          <strong>{isLoading ? "--" : activity?.todayOrderCount ?? 0}</strong>
+        </div>
+        <div className="platform-metric">
+          <span>今日发单额</span>
+          <strong>{isLoading ? "--" : formatActivityAmount(activity?.todayOrderAmount ?? 0)}</strong>
+        </div>
+        <div className="platform-metric">
+          <span>本月发单</span>
+          <strong>{isLoading ? "--" : activity?.monthOrderCount ?? 0}</strong>
+        </div>
+        <div className="platform-metric">
+          <span>本月发单额</span>
+          <strong>{isLoading ? "--" : formatActivityAmount(activity?.monthOrderAmount ?? 0)}</strong>
+        </div>
+        {shouldShowTotalMetric ? (
+          <div className="platform-metric">
+            <span>累计发单</span>
+            <strong>{isLoading ? "--" : activity?.totalOrderCount ?? 0}</strong>
+          </div>
+        ) : null}
+      </div>
+
+      {activeOrder ? (
+        <div className="platform-live-list" aria-live="off">
+          <article className="platform-live-item" key={activeOrder.taskId}>
+            <span className="platform-live-kind">{getActivityCategory(activeOrder.description)}</span>
+            <span className="platform-live-content">
+              <strong title={getPublicActivityDescription(activeOrder.description)}>{getActivityDescription(activeOrder.description)}</strong>
+              <span className="platform-live-meta">
+                {formatActivityTime(activeOrder.createdAt)}
+              </span>
+            </span>
+          </article>
+        </div>
+      ) : null}
+    </aside>
+  );
 }
 
 export function OrderConsole() {
@@ -571,6 +727,7 @@ export function OrderConsole() {
   const [dataSource, setDataSource] = useState<"mock" | "caichong" | "supabase" | "unknown">("unknown");
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [configHealth, setConfigHealth] = useState<ConfigHealth | null>(null);
+  const [platformActivity, setPlatformActivity] = useState<PlatformActivitySummary | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -581,8 +738,10 @@ export function OrderConsole() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isPlatformActivityLoading, setIsPlatformActivityLoading] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSendingCode, setIsSendingCode] = useState(false);
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [codeCooldown, setCodeCooldown] = useState(0);
   const [uploadProgressText, setUploadProgressText] = useState<string | null>(null);
   const [selectingSubmissionId, setSelectingSubmissionId] = useState<string | null>(null);
@@ -618,6 +777,7 @@ export function OrderConsole() {
   const shouldShowAttachmentError = isAttachmentValidationError(error);
   const shouldShowComposerValidationError = shouldShowDescriptionError || shouldShowPriceError || shouldShowAttachmentError;
   const descriptionLength = description.trim().length;
+  const shouldPausePlatformActivity = isComposerFocused || descriptionLength > 0;
   const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
   const shouldShowSidebarOrders = Boolean(isPhoneLoggedIn && hasLoadedTasks && visibleTasks.length > 0);
@@ -797,6 +957,27 @@ export function OrderConsole() {
       setConfigHealth(config);
     } catch {
       setConfigHealth(null);
+    }
+  }
+
+  async function loadPlatformActivity() {
+    setIsPlatformActivityLoading(true);
+    try {
+      const activity = await readJson<PlatformActivitySummary>(await fetch("/api/platform/activity"));
+      setPlatformActivity(activity);
+    } catch {
+      setPlatformActivity({
+        todayOrderCount: 0,
+        monthOrderCount: 0,
+        totalOrderCount: 0,
+        todayOrderAmount: 0,
+        monthOrderAmount: 0,
+        totalOrderAmount: 0,
+        recentOrders: [],
+        source: "unavailable"
+      });
+    } finally {
+      setIsPlatformActivityLoading(false);
     }
   }
 
@@ -993,6 +1174,7 @@ export function OrderConsole() {
 
       setLastRefreshAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
       await loadTasks();
+      await loadPlatformActivity();
 
       if (selectedTaskId) {
         await loadTaskDetail(selectedTaskId);
@@ -1034,6 +1216,7 @@ export function OrderConsole() {
       setPendingPaymentTaskId(null);
       setPendingPaymentUrl(null);
       setMessage("付款已完成，任务已发布。");
+      await loadPlatformActivity();
       updateSelectedTask(paidTask.taskId);
     } catch (confirmError) {
       setError(confirmError instanceof Error ? confirmError.message : "付款状态刷新失败");
@@ -1291,6 +1474,7 @@ export function OrderConsole() {
       setDescription("");
       setAttachments([]);
       await loadTasks();
+      await loadPlatformActivity();
       if (paymentWindow) {
         paymentWindow.location.href = paymentUrl;
       } else {
@@ -1309,6 +1493,7 @@ export function OrderConsole() {
     loadCurrentUser();
     loadConfigHealth();
     loadTasks();
+    loadPlatformActivity();
   }, []);
 
   useEffect(() => {
@@ -1682,202 +1867,210 @@ export function OrderConsole() {
                 <h1>今天想做点什么？</h1>
               </div>
 
-              <form className="hero-task-card studio-composer home-composer" onSubmit={createTask} noValidate>
-                <div className="form-body">
-                  {attachments.length > 0 ? (
-                    <div
-                      className={`composer-attachments-wrap ${composerAttachmentScroll.canScrollLeft ? "has-left-button" : ""} ${
-                        composerAttachmentScroll.canScrollRight ? "has-right-button" : ""
-                      }`}
-                    >
-                      {composerAttachmentScroll.canScrollLeft ? (
-                        <button
-                          className="composer-attachment-scroll-button left"
-                          aria-label="向左滚动附件"
-                          title="向左"
-                          type="button"
-                          onClick={() => scrollComposerAttachments("left")}
+              <div className="home-publish-layout">
+                <div className="home-composer-column">
+                  <form className="hero-task-card studio-composer home-composer" onSubmit={createTask} noValidate>
+                    <div className="form-body">
+                      {attachments.length > 0 ? (
+                        <div
+                          className={`composer-attachments-wrap ${composerAttachmentScroll.canScrollLeft ? "has-left-button" : ""} ${
+                            composerAttachmentScroll.canScrollRight ? "has-right-button" : ""
+                          }`}
                         >
-                          <Icon name="chevron" />
-                        </button>
-                      ) : null}
-                      <div
-                        className="attachment-list composer-attachments"
-                        ref={composerAttachmentsRef}
-                        onScroll={updateComposerAttachmentScrollState}
-                      >
-                        {attachments.map((attachment, index) => (
-                          <div className="attachment-item is-removable" key={`${attachment.fileName}-${index}`}>
-                            <AttachmentVisual attachment={attachment} file={attachment.file} />
-                            <div className="attachment-copy">
-                              <strong title={repairMojibakeFileName(attachment.fileName)}>{repairMojibakeFileName(attachment.fileName)}</strong>
-                              <span>{formatFileSize(attachment.fileSize)}</span>
-                            </div>
+                          {composerAttachmentScroll.canScrollLeft ? (
                             <button
-                              className="attachment-remove-button"
-                              aria-label={`删除 ${attachment.fileName}`}
-                              title="发布前可删除重传"
+                              className="composer-attachment-scroll-button left"
+                              aria-label="向左滚动附件"
+                              title="向左"
                               type="button"
-                              onClick={() => removeAttachment(index)}
+                              onClick={() => scrollComposerAttachments("left")}
                             >
-                              <Icon name="close" />
+                              <Icon name="chevron" />
+                            </button>
+                          ) : null}
+                          <div
+                            className="attachment-list composer-attachments"
+                            ref={composerAttachmentsRef}
+                            onScroll={updateComposerAttachmentScrollState}
+                          >
+                            {attachments.map((attachment, index) => (
+                              <div className="attachment-item is-removable" key={`${attachment.fileName}-${index}`}>
+                                <AttachmentVisual attachment={attachment} file={attachment.file} />
+                                <div className="attachment-copy">
+                                  <strong title={repairMojibakeFileName(attachment.fileName)}>{repairMojibakeFileName(attachment.fileName)}</strong>
+                                  <span>{formatFileSize(attachment.fileSize)}</span>
+                                </div>
+                                <button
+                                  className="attachment-remove-button"
+                                  aria-label={`删除 ${attachment.fileName}`}
+                                  title="发布前可删除重传"
+                                  type="button"
+                                  onClick={() => removeAttachment(index)}
+                                >
+                                  <Icon name="close" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          {composerAttachmentScroll.canScrollRight ? (
+                            <button
+                              className="composer-attachment-scroll-button right"
+                              aria-label="向右滚动附件"
+                              title="向右"
+                              type="button"
+                              onClick={() => scrollComposerAttachments("right")}
+                            >
+                              <Icon name="chevron" />
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      <label className="textarea-field" htmlFor="description">
+                        <textarea
+                          id="description"
+                          ref={descriptionTextareaRef}
+                          aria-label="任务说明"
+                          value={description}
+                          onChange={(event) => {
+                            const nextDescription = event.target.value;
+                            setDescription(nextDescription);
+                            if (error === DESCRIPTION_TOO_SHORT_ERROR && nextDescription.trim().length >= MIN_DESCRIPTION_LENGTH) {
+                              setError(null);
+                            }
+                          }}
+                          onFocus={() => setIsComposerFocused(true)}
+                          onBlur={() => setIsComposerFocused(false)}
+                          placeholder="说说你想做什么，比如风格、要求、字数、时长或用在什么场景等，描述越具体，成果越符合预期"
+                          disabled={isCreating}
+                        />
+                      </label>
+
+                      <div className="task-card-controls">
+                        <div
+                          className={`attachment-control-group ${isAttachmentTooltipSuppressed ? "is-tooltip-suppressed" : ""}`}
+                          onMouseLeave={() => setIsAttachmentTooltipSuppressed(false)}
+                          onBlur={(event) => {
+                            if (!event.currentTarget.contains(event.relatedTarget)) {
+                              setIsAttachmentTooltipSuppressed(false);
+                            }
+                          }}
+                        >
+                          <label
+                            className="attachment-control"
+                            htmlFor="attachments"
+                            aria-label="上传附件"
+                            aria-describedby={ATTACHMENT_RULE_TOOLTIP_ID}
+                            onClick={(event) => {
+                              setIsAttachmentTooltipSuppressed(true);
+                              if (!isPhoneLoggedIn) {
+                                event.preventDefault();
+                                setError(null);
+                                setMessage(null);
+                                setIsLoginOpen(true);
+                              }
+                            }}
+                          >
+                            <Icon name="attachment" />
+                            <input
+                              id="attachments"
+                              multiple
+                              type="file"
+                              disabled={isCreating}
+                              onClick={(event) => {
+                                setIsAttachmentTooltipSuppressed(true);
+                                if (!isPhoneLoggedIn) {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setError(null);
+                                  setMessage(null);
+                                  setIsLoginOpen(true);
+                                }
+                              }}
+                              onChange={(event) => {
+                                const input = event.currentTarget;
+                                if (!isPhoneLoggedIn) {
+                                  input.value = "";
+                                  input.blur();
+                                  setError(null);
+                                  setMessage(null);
+                                  setIsLoginOpen(true);
+                                  return;
+                                }
+                                addAttachments(input.files);
+                                input.value = "";
+                                input.blur();
+                              }}
+                            />
+                          </label>
+                          <span className="attachment-rule-tooltip" id={ATTACHMENT_RULE_TOOLTIP_ID} role="tooltip">
+                            {ATTACHMENT_RULE_COPY}
+                            <br />
+                            {ATTACHMENT_LIMIT_COPY}
+                          </span>
+                        </div>
+                        <div className="budget-control-group">
+                          <label className="budget-control" htmlFor="price" aria-describedby="price-rule-tooltip">
+                            ¥
+                            <input
+                              id="price"
+                              inputMode="decimal"
+                              min="1"
+                              max="100"
+                              step="0.1"
+                              type="text"
+                              name="aichong-task-budget"
+                              autoComplete="off"
+                              value={price}
+                              placeholder="1-100"
+                              onBlur={normalizePriceInput}
+                              onChange={(event) => {
+                                updatePriceInput(event.target.value);
+                                if (error === PRICE_INVALID_ERROR) {
+                                  setError(null);
+                                }
+                              }}
+                              disabled={isCreating}
+                            />
+                          </label>
+                          <span className="budget-rule-tooltip" id="price-rule-tooltip" role="tooltip">
+                            平台客单价 1-100 元
+                            <br />
+                            通常报酬越高，越能收到更多投稿
+                          </span>
+                        </div>
+                        <button className="publish-button" type="submit" disabled={isPublishDisabled}>
+                          {isCreating ? "发布中" : "发布任务 →"}
+                        </button>
+                      </div>
+
+                      {pendingPaymentTaskId && pendingPaymentUrl ? (
+                        <div className="payment-wait-card">
+                          <div>
+                            <strong>请先完成付款</strong>
+                            <span>付款完成后回到这里，刷新状态即可看到任务详情。</span>
+                          </div>
+                          <div className="payment-wait-actions">
+                            <a href={pendingPaymentUrl} target="_blank" rel="noreferrer">
+                              重新打开付款页
+                            </a>
+                            <button type="button" onClick={confirmPaymentComplete} disabled={isConfirmingPayment}>
+                              {isConfirmingPayment ? "刷新中" : "我已完成付款"}
                             </button>
                           </div>
-                        ))}
-                      </div>
-                      {composerAttachmentScroll.canScrollRight ? (
-                        <button
-                          className="composer-attachment-scroll-button right"
-                          aria-label="向右滚动附件"
-                          title="向右"
-                          type="button"
-                          onClick={() => scrollComposerAttachments("right")}
-                        >
-                          <Icon name="chevron" />
-                        </button>
+                        </div>
                       ) : null}
-                    </div>
-                  ) : null}
 
-                  <label className="textarea-field" htmlFor="description">
-                    <textarea
-                      id="description"
-                      ref={descriptionTextareaRef}
-                      aria-label="任务说明"
-                      value={description}
-                      onChange={(event) => {
-                        const nextDescription = event.target.value;
-                        setDescription(nextDescription);
-                        if (error === DESCRIPTION_TOO_SHORT_ERROR && nextDescription.trim().length >= MIN_DESCRIPTION_LENGTH) {
-                          setError(null);
-                        }
-                      }}
-                      placeholder="说说你想做什么，比如风格、要求、字数、时长或用在什么场景等，描述越具体，成果越符合预期"
-                      disabled={isCreating}
-                    />
-                  </label>
-
-                  <div className="task-card-controls">
-                    <div
-                      className={`attachment-control-group ${isAttachmentTooltipSuppressed ? "is-tooltip-suppressed" : ""}`}
-                      onMouseLeave={() => setIsAttachmentTooltipSuppressed(false)}
-                      onBlur={(event) => {
-                        if (!event.currentTarget.contains(event.relatedTarget)) {
-                          setIsAttachmentTooltipSuppressed(false);
-                        }
-                      }}
-                    >
-                      <label
-                        className="attachment-control"
-                        htmlFor="attachments"
-                        aria-label="上传附件"
-                        aria-describedby={ATTACHMENT_RULE_TOOLTIP_ID}
-                        onClick={(event) => {
-                          setIsAttachmentTooltipSuppressed(true);
-                          if (!isPhoneLoggedIn) {
-                            event.preventDefault();
-                            setError(null);
-                            setMessage(null);
-                            setIsLoginOpen(true);
-                          }
-                        }}
-                      >
-                        <Icon name="attachment" />
-                        <input
-                          id="attachments"
-                          multiple
-                          type="file"
-                          disabled={isCreating}
-                          onClick={(event) => {
-                            setIsAttachmentTooltipSuppressed(true);
-                            if (!isPhoneLoggedIn) {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              setError(null);
-                              setMessage(null);
-                              setIsLoginOpen(true);
-                            }
-                          }}
-                          onChange={(event) => {
-                            const input = event.currentTarget;
-                            if (!isPhoneLoggedIn) {
-                              input.value = "";
-                              input.blur();
-                              setError(null);
-                              setMessage(null);
-                              setIsLoginOpen(true);
-                              return;
-                            }
-                            addAttachments(input.files);
-                            input.value = "";
-                            input.blur();
-                          }}
-                        />
-                      </label>
-                      <span className="attachment-rule-tooltip" id={ATTACHMENT_RULE_TOOLTIP_ID} role="tooltip">
-                        {ATTACHMENT_RULE_COPY}
-                        <br />
-                        {ATTACHMENT_LIMIT_COPY}
-                      </span>
+                      {uploadProgressText ? <div className="message neutral">{uploadProgressText}</div> : null}
+                      {message ? <div className="message neutral">{message}</div> : null}
+                      {error && !shouldShowComposerValidationError ? <div className="message error">{error}</div> : null}
                     </div>
-                    <div className="budget-control-group">
-                      <label className="budget-control" htmlFor="price" aria-describedby="price-rule-tooltip">
-                        ¥
-                        <input
-                          id="price"
-                          inputMode="decimal"
-                          min="1"
-                          max="100"
-                          step="0.1"
-                          type="text"
-                          name="aichong-task-budget"
-                          autoComplete="off"
-                          value={price}
-                          placeholder="1-100"
-                          onBlur={normalizePriceInput}
-                          onChange={(event) => {
-                            updatePriceInput(event.target.value);
-                            if (error === PRICE_INVALID_ERROR) {
-                              setError(null);
-                            }
-                          }}
-                          disabled={isCreating}
-                        />
-                      </label>
-                      <span className="budget-rule-tooltip" id="price-rule-tooltip" role="tooltip">
-                        平台客单价 1-100 元
-                        <br />
-                        通常报酬越高，越能收到更多投稿
-                      </span>
-                    </div>
-                    <button className="publish-button" type="submit" disabled={isPublishDisabled}>
-                      {isCreating ? "发布中" : "发布任务 →"}
-                    </button>
-                  </div>
-
-                  {pendingPaymentTaskId && pendingPaymentUrl ? (
-                    <div className="payment-wait-card">
-                      <div>
-                        <strong>请先完成付款</strong>
-                        <span>付款完成后回到这里，刷新状态即可看到任务详情。</span>
-                      </div>
-                      <div className="payment-wait-actions">
-                        <a href={pendingPaymentUrl} target="_blank" rel="noreferrer">
-                          重新打开付款页
-                        </a>
-                        <button type="button" onClick={confirmPaymentComplete} disabled={isConfirmingPayment}>
-                          {isConfirmingPayment ? "刷新中" : "我已完成付款"}
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {uploadProgressText ? <div className="message neutral">{uploadProgressText}</div> : null}
-                  {message ? <div className="message neutral">{message}</div> : null}
-                  {error && !shouldShowComposerValidationError ? <div className="message error">{error}</div> : null}
+                  </form>
+                  {shouldShowComposerValidationError ? <div className="composer-validation-message">{error}</div> : null}
                 </div>
-              </form>
-              {shouldShowComposerValidationError ? <div className="composer-validation-message">{error}</div> : null}
+
+                <PlatformActivityPanel activity={platformActivity} isLoading={isPlatformActivityLoading} isPaused={shouldPausePlatformActivity} />
+              </div>
             </section>
 
             <section className="case-section studio-cases">

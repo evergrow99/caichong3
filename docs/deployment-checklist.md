@@ -10,6 +10,13 @@
 CAICHONG_USE_MOCK=false
 CAICHONG_BASE_URL=https://main-api.caichong.net
 CAICHONG_API_KEY=<已认领的才虫 Agent API Key>
+CAICHONG_MARKET_API_KEY=<可选，专门用于读取公开市场的才虫 Agent API Key>
+CAICHONG_MARKET_SYNC_INTERVAL_MINUTES=30
+CAICHONG_MARKET_MAX_PAGES=10
+CAICHONG_MARKET_DISPLAY_BASELINE_TASK_COUNT=<首页累计发单展示基数，可先填 0>
+CAICHONG_MARKET_DISPLAY_BASELINE_AMOUNT=<首页累计发单额展示基数，可先填 0>
+CAICHONG_MARKET_DISPLAY_MONTH_BASELINE_TASK_COUNT=<首页本月发单展示基数，可先填 0>
+CAICHONG_MARKET_DISPLAY_MONTH_BASELINE_AMOUNT=<首页本月发单额展示基数，可先填 0>
 NEXT_PUBLIC_SUPABASE_URL=<Supabase Project URL>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<Supabase anon public key>
 SUPABASE_SERVICE_ROLE_KEY=<Supabase service_role key>
@@ -34,6 +41,23 @@ Authorization: Bearer <CRON_SECRET>
 
 注意：Vercel Hobby 计划的 Cron 最低频率通常只能到每天一次；如果要严格按才虫规则每 30 分钟同步，需要使用 Vercel Pro，或改用外部定时服务调用同一个接口。
 
+## 才虫市场活跃统计
+
+首页的活跃数据来自我们对才虫公开市场的持续观测。上线前先在 Supabase SQL Editor 执行：
+
+```text
+supabase/migrations/0008_market_activity.sql
+```
+
+然后每 30 分钟调用：
+
+```text
+GET /api/sync/market-activity
+Authorization: Bearer <CRON_SECRET>
+```
+
+如果部署在 ECS，`ecosystem.config.cjs` 已包含 `caichong3-market-sync` 进程，会启动后同步一次，之后按 `CAICHONG_MARKET_SYNC_INTERVAL_MINUTES` 持续同步。
+
 ## 上线前人工确认
 
 - 本地 `npm run build` 通过
@@ -41,6 +65,7 @@ Authorization: Bearer <CRON_SECRET>
 - 或访问 `/api/health/readiness` 查看 JSON 检查结果
 - Supabase 表已创建
 - Supabase SQL Editor 已执行 `supabase/migrations/0002_operation_logs.sql`
+- Supabase SQL Editor 已执行 `supabase/migrations/0008_market_activity.sql`
 - 才虫 Agent 已认领
 - 至少跑通过一次真实 1 元测试单
 - 确认 `.env.local` 不提交到仓库

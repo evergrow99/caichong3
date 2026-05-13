@@ -1,0 +1,552 @@
+import { createCaichongClient, type ExploreTask } from "@/lib/caichong";
+import { getPlatformCaichongAccount } from "@/lib/caichong-account";
+import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase/server";
+
+export type MarketActivityItem = {
+  taskId: string;
+  description: string;
+  price: number;
+  status: string;
+  createdAt?: string;
+};
+
+export type MarketActivitySummary = {
+  todayOrderCount: number;
+  monthOrderCount: number;
+  totalOrderCount: number;
+  todayOrderAmount: number;
+  monthOrderAmount: number;
+  totalOrderAmount: number;
+  recentOrders: MarketActivityItem[];
+  lastSyncedAt?: string;
+  source: "caichong_observed" | "unavailable";
+};
+
+export type MarketActivitySyncResult = {
+  ok: boolean;
+  skipped: boolean;
+  reason?: string;
+  observedCount: number;
+  lastSyncedAt?: string;
+};
+
+type MarketObservedTaskRow = {
+  task_id: string;
+  description: string;
+  price: number | string;
+  total_price: number | string;
+  status: string;
+  activity_at: string;
+};
+
+type MarketObservedTaskUpsertRow = {
+  task_id: string;
+  description: string;
+  price: number;
+  total_price: number;
+  status: string;
+  submission_count: number;
+  caichong_created_at: string | null;
+  activity_at: string;
+  last_seen_at: string;
+  raw: Record<string, unknown>;
+};
+
+type LocalPublishedOrderRow = {
+  caichong_task_id: string;
+  description: string;
+  price: number | string;
+  status: string;
+  submission_count: number | null;
+  created_at: string | null;
+};
+
+type MarketBaselineRow = {
+  task_count_base: number | null;
+  amount_base: number | string | null;
+  month_task_count_base: number | null;
+  month_amount_base: number | string | null;
+  note: string | null;
+};
+
+type MarketStateRow = {
+  last_synced_at: string | null;
+};
+
+const MARKET_STATE_ID = "default";
+const MARKET_BASELINE_ID = "default";
+const DEFAULT_SYNC_INTERVAL_MINUTES = 30;
+const DEFAULT_MAX_MARKET_PAGES = 10;
+
+function isMissingTableError(error: { code?: string; message?: string }) {
+  return error.code === "42P01" || error.code === "PGRST205" || Boolean(error.message?.includes("Could not find the table"));
+}
+
+function getNumberEnv(name: string, fallback: number) {
+  const value = process.env[name];
+  if (!value) return fallback;
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function getNumberEnvWithLegacy(name: string, legacyName: string, fallback: number) {
+  const value = process.env[name];
+  if (value) {
+    return getNumberEnv(name, fallback);
+  }
+
+  return getNumberEnv(legacyName, fallback);
+}
+
+function getMarketApiKey() {
+  return process.env.CAICHONG_MARKET_API_KEY || getPlatformCaichongAccount().apiKey;
+}
+
+function getTaskAmount(task: ExploreTask) {
+  return Number(task.totalPrice || task.price || 0);
+}
+
+function toIsoDate(value?: string) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toISOString();
+}
+
+function getChinaPeriodBounds(now = new Date()) {
+  const chinaOffsetMs = 8 * 60 * 60 * 1000;
+  const chinaNow = new Date(now.getTime() + chinaOffsetMs);
+  const year = chinaNow.getUTCFullYear();
+  const month = chinaNow.getUTCMonth();
+  const date = chinaNow.getUTCDate();
+
+  return {
+    todayStart: new Date(Date.UTC(year, month, date) - chinaOffsetMs).toISOString(),
+    tomorrowStart: new Date(Date.UTC(year, month, date + 1) - chinaOffsetMs).toISOString(),
+    monthStart: new Date(Date.UTC(year, month, 1) - chinaOffsetMs).toISOString(),
+    nextMonthStart: new Date(Date.UTC(year, month + 1, 1) - chinaOffsetMs).toISOString()
+  };
+}
+
+function emptySummary(): MarketActivitySummary {
+  return {
+    todayOrderCount: 0,
+    monthOrderCount: 0,
+    totalOrderCount: 0,
+    todayOrderAmount: 0,
+    monthOrderAmount: 0,
+    totalOrderAmount: 0,
+    recentOrders: [],
+    source: "unavailable"
+  };
+}
+
+async function listCaichongMarketTasks() {
+  const apiKey = getMarketApiKey();
+  if (!apiKey) {
+    return null;
+  }
+
+  const client = createCaichongClient({ apiKey });
+  const pageSize = 50;
+  const firstPage = await client.listExploreTasks({ page: 1, pageSize });
+  const maxPages = Math.max(1, getNumberEnv("CAICHONG_MARKET_MAX_PAGES", DEFAULT_MAX_MARKET_PAGES));
+  const totalPages = Math.min(firstPage.totalPages || 1, maxPages);
+  const tasks = [...firstPage.tasks];
+
+  if (totalPages > 1) {
+    const restPages = await Promise.all(
+      Array.from({ length: totalPages - 1 }, (_item, index) => client.listExploreTasks({ page: index + 2, pageSize }))
+    );
+    for (const page of restPages) {
+      tasks.push(...page.tasks);
+    }
+  }
+
+  return tasks;
+}
+
+function mapExploreTasksToRows(tasks: ExploreTask[], nowIso: string): MarketObservedTaskUpsertRow[] {
+  return tasks
+    .filter((task) => task.taskId && task.description)
+    .map((task) => {
+      const caichongCreatedAt = toIsoDate(task.createdAt);
+      const activityAt = caichongCreatedAt || nowIso;
+      const totalPrice = getTaskAmount(task);
+
+      return {
+        task_id: task.taskId,
+        description: task.description,
+        price: Number(task.price || 0),
+        total_price: totalPrice,
+        status: task.status || "ACTIVE",
+        submission_count: task.submissionCount || 0,
+        caichong_created_at: caichongCreatedAt,
+        activity_at: activityAt,
+        last_seen_at: nowIso,
+        raw: {
+          source: "caichong_market",
+          bonusCount: task.bonusCount || 0,
+          bonusTotal: task.bonusTotal || 0,
+          deadlineAt: task.deadlineAt
+        }
+      };
+    });
+}
+
+function mapLocalOrdersToRows(orders: LocalPublishedOrderRow[], nowIso: string): MarketObservedTaskUpsertRow[] {
+  return orders
+    .filter((order) => order.caichong_task_id && order.description)
+    .map((order) => {
+      const caichongCreatedAt = toIsoDate(order.created_at || undefined);
+      const activityAt = caichongCreatedAt || nowIso;
+      const price = Number(order.price || 0);
+
+      return {
+        task_id: order.caichong_task_id,
+        description: order.description,
+        price,
+        total_price: price,
+        status: order.status || "ACTIVE",
+        submission_count: order.submission_count || 0,
+        caichong_created_at: caichongCreatedAt,
+        activity_at: activityAt,
+        last_seen_at: nowIso,
+        raw: {
+          source: "local_published_order"
+        }
+      };
+    });
+}
+
+async function upsertObservedRows(rows: MarketObservedTaskUpsertRow[]) {
+  if (rows.length === 0) {
+    return { ok: true as const };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { error } = await supabase.from("market_observed_tasks").upsert(rows, {
+    onConflict: "task_id"
+  });
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      return { ok: false as const, reason: "migration_missing" };
+    }
+
+    throw new Error(`保存才虫市场观测任务失败：${error.message}`);
+  }
+
+  return { ok: true as const };
+}
+
+async function syncLocalPublishedOrders(nowIso: string) {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("orders")
+    .select("caichong_task_id, description, price, status, submission_count, created_at")
+    .neq("status", "PENDING_PAYMENT")
+    .limit(5000);
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      return { ok: true as const, observedCount: 0 };
+    }
+
+    throw new Error(`读取本地发布订单失败：${error.message}`);
+  }
+
+  const rows = mapLocalOrdersToRows((data || []) as LocalPublishedOrderRow[], nowIso);
+  const upsertResult = await upsertObservedRows(rows);
+
+  if (!upsertResult.ok) {
+    return {
+      ok: false as const,
+      reason: upsertResult.reason,
+      observedCount: 0
+    };
+  }
+
+  return {
+    ok: true as const,
+    observedCount: rows.length
+  };
+}
+
+async function getLastSyncedAt() {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("market_activity_state")
+    .select("last_synced_at")
+    .eq("id", MARKET_STATE_ID)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      return undefined;
+    }
+
+    throw new Error(`读取才虫市场同步状态失败：${error.message}`);
+  }
+
+  return (data as MarketStateRow | null)?.last_synced_at || undefined;
+}
+
+export async function syncMarketActivity({ force = false }: { force?: boolean } = {}): Promise<MarketActivitySyncResult> {
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "supabase_unavailable",
+      observedCount: 0
+    };
+  }
+
+  const lastSyncedAt = await getLastSyncedAt();
+  const syncIntervalMinutes = Math.max(1, getNumberEnv("CAICHONG_MARKET_SYNC_INTERVAL_MINUTES", DEFAULT_SYNC_INTERVAL_MINUTES));
+  const nowIso = new Date().toISOString();
+  const localSyncResult = await syncLocalPublishedOrders(nowIso);
+
+  if (!localSyncResult.ok) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: localSyncResult.reason,
+      observedCount: 0,
+      lastSyncedAt
+    };
+  }
+
+  if (!force && lastSyncedAt) {
+    const elapsedMs = Date.now() - new Date(lastSyncedAt).getTime();
+    if (!Number.isNaN(elapsedMs) && elapsedMs < syncIntervalMinutes * 60 * 1000) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "fresh",
+        observedCount: localSyncResult.observedCount,
+        lastSyncedAt
+      };
+    }
+  }
+
+  const tasks = await listCaichongMarketTasks();
+  if (!tasks) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "missing_caichong_api_key",
+      observedCount: localSyncResult.observedCount,
+      lastSyncedAt
+    };
+  }
+
+  const rows = mapExploreTasksToRows(tasks, nowIso);
+  const upsertResult = await upsertObservedRows(rows);
+
+  if (!upsertResult.ok) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: upsertResult.reason,
+      observedCount: 0,
+      lastSyncedAt
+    };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { error: stateError } = await supabase.from("market_activity_state").upsert(
+    {
+      id: MARKET_STATE_ID,
+      last_synced_at: nowIso,
+      last_observed_count: rows.length + localSyncResult.observedCount,
+      updated_at: nowIso
+    },
+    {
+      onConflict: "id"
+    }
+  );
+
+  if (stateError) {
+    if (isMissingTableError(stateError)) {
+      return {
+        ok: false,
+        skipped: true,
+        reason: "migration_missing",
+        observedCount: 0,
+        lastSyncedAt
+      };
+    }
+
+    throw new Error(`保存才虫市场同步状态失败：${stateError.message}`);
+  }
+
+  return {
+    ok: true,
+    skipped: false,
+    observedCount: rows.length + localSyncResult.observedCount,
+    lastSyncedAt: nowIso
+  };
+}
+
+export async function syncMarketActivityIfStale() {
+  return syncMarketActivity({ force: false });
+}
+
+async function getBaseline() {
+  const fallback = {
+    taskCountBase: getNumberEnvWithLegacy(
+      "CAICHONG_MARKET_DISPLAY_BASELINE_TASK_COUNT",
+      "CAICHONG_MARKET_BASELINE_TASK_COUNT",
+      0
+    ),
+    amountBase: getNumberEnvWithLegacy("CAICHONG_MARKET_DISPLAY_BASELINE_AMOUNT", "CAICHONG_MARKET_BASELINE_AMOUNT", 0),
+    monthTaskCountBase: getNumberEnv("CAICHONG_MARKET_DISPLAY_MONTH_BASELINE_TASK_COUNT", 0),
+    monthAmountBase: getNumberEnv("CAICHONG_MARKET_DISPLAY_MONTH_BASELINE_AMOUNT", 0)
+  };
+
+  function parseNoteBaseline(note?: string | null) {
+    if (!note) {
+      return {};
+    }
+
+    try {
+      const data = JSON.parse(note) as {
+        monthTaskCountBase?: unknown;
+        monthAmountBase?: unknown;
+      };
+
+      return {
+        monthTaskCountBase: Number(data.monthTaskCountBase ?? fallback.monthTaskCountBase),
+        monthAmountBase: Number(data.monthAmountBase ?? fallback.monthAmountBase)
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  if (!hasSupabaseServiceConfig()) {
+    return fallback;
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("market_activity_baselines")
+    .select("task_count_base, amount_base, month_task_count_base, month_amount_base, note")
+    .eq("id", MARKET_BASELINE_ID)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      return fallback;
+    }
+
+    if (error.code === "42703" || Boolean(error.message?.includes("month_task_count_base"))) {
+      const { data: legacyData, error: legacyError } = await supabase
+        .from("market_activity_baselines")
+        .select("task_count_base, amount_base, note")
+        .eq("id", MARKET_BASELINE_ID)
+        .maybeSingle();
+
+      if (legacyError) {
+        if (isMissingTableError(legacyError)) {
+          return fallback;
+        }
+
+        throw new Error(`读取才虫市场基数失败：${legacyError.message}`);
+      }
+
+      const legacyBaseline = legacyData as Pick<MarketBaselineRow, "task_count_base" | "amount_base" | "note"> | null;
+      const noteBaseline = parseNoteBaseline(legacyBaseline?.note);
+      return {
+        ...fallback,
+        taskCountBase: Number(legacyBaseline?.task_count_base ?? fallback.taskCountBase),
+        amountBase: Number(legacyBaseline?.amount_base ?? fallback.amountBase),
+        ...noteBaseline
+      };
+    }
+
+    throw new Error(`读取才虫市场基数失败：${error.message}`);
+  }
+
+  const baseline = data as MarketBaselineRow | null;
+  const noteBaseline = parseNoteBaseline(baseline?.note);
+  return {
+    taskCountBase: Number(baseline?.task_count_base ?? fallback.taskCountBase),
+    amountBase: Number(baseline?.amount_base ?? fallback.amountBase),
+    monthTaskCountBase: Number(baseline?.month_task_count_base ?? noteBaseline.monthTaskCountBase ?? fallback.monthTaskCountBase),
+    monthAmountBase: Number(baseline?.month_amount_base ?? noteBaseline.monthAmountBase ?? fallback.monthAmountBase)
+  };
+}
+
+function sumRows(rows: { total_price: number | string }[]) {
+  return rows.reduce((total, row) => total + Number(row.total_price || 0), 0);
+}
+
+export async function getMarketActivitySummary(): Promise<MarketActivitySummary> {
+  if (!hasSupabaseServiceConfig()) {
+    return emptySummary();
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { todayStart, tomorrowStart, monthStart, nextMonthStart } = getChinaPeriodBounds();
+  const baseline = await getBaseline();
+  const lastSyncedAt = await getLastSyncedAt();
+
+  const [todayRowsResult, monthRowsResult, totalCountResult, totalRowsResult, recentResult] = await Promise.all([
+    supabase
+      .from("market_observed_tasks")
+      .select("total_price")
+      .gte("activity_at", todayStart)
+      .lt("activity_at", tomorrowStart)
+      .limit(5000),
+    supabase
+      .from("market_observed_tasks")
+      .select("total_price")
+      .gte("activity_at", monthStart)
+      .lt("activity_at", nextMonthStart)
+      .limit(5000),
+    supabase.from("market_observed_tasks").select("task_id", { count: "exact", head: true }),
+    supabase.from("market_observed_tasks").select("total_price").limit(5000),
+    supabase
+      .from("market_observed_tasks")
+      .select("task_id, description, total_price, status, activity_at")
+      .order("activity_at", { ascending: false })
+      .limit(5)
+  ]);
+
+  for (const result of [todayRowsResult, monthRowsResult, totalCountResult, totalRowsResult, recentResult]) {
+    if (result.error) {
+      if (isMissingTableError(result.error)) {
+        return emptySummary();
+      }
+
+      throw new Error(`读取才虫市场活跃统计失败：${result.error.message}`);
+    }
+  }
+
+  const recentOrders = ((recentResult.data || []) as MarketObservedTaskRow[]).map((task) => ({
+    taskId: task.task_id,
+    description: task.description,
+    price: Number(task.total_price || task.price || 0),
+    status: task.status,
+    createdAt: task.activity_at
+  }));
+
+  return {
+    todayOrderCount: todayRowsResult.data?.length || 0,
+    monthOrderCount: baseline.monthTaskCountBase + (monthRowsResult.data?.length || 0),
+    totalOrderCount: baseline.taskCountBase + (totalCountResult.count || 0),
+    todayOrderAmount: sumRows((todayRowsResult.data || []) as { total_price: number | string }[]),
+    monthOrderAmount: baseline.monthAmountBase + sumRows((monthRowsResult.data || []) as { total_price: number | string }[]),
+    totalOrderAmount: baseline.amountBase + sumRows((totalRowsResult.data || []) as { total_price: number | string }[]),
+    recentOrders,
+    lastSyncedAt,
+    source: "caichong_observed"
+  };
+}
