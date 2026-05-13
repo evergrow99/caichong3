@@ -17,8 +17,7 @@ export function StaticCopyButton({ value }: { value: string }) {
 
   return (
     <button type="button" onClick={handleCopy}>
-      <span aria-hidden="true">▣</span>
-      {copied ? "已复制" : "复制"}
+      {copied ? "已复制" : "复制链接"}
     </button>
   );
 }

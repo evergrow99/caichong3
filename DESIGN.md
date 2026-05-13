@@ -18,6 +18,7 @@ Use dark green-black as atmosphere, green as the primary action and active state
 - The homepage first viewport is a product workspace, not a landing page. The task input is the main object.
 - Default homepage hierarchy: welcome headline, one-line explanation, low-friction task publisher, then examples.
 - Task detail pages remain functional and status-led. Do not visually hide deadlines, submissions, attachments, or selection actions.
+- Static informational pages such as `/market-rules` and `/work` should still feel like AICHONG: dark green-black surfaces, restrained green accents, shared navigation, and concise product copy. Do not use a separate white marketplace/landing-page style for them.
 - Use cards for repeated items and modals. Avoid nesting cards inside cards.
 
 ## Task Publisher
