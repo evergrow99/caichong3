@@ -963,6 +963,8 @@ textarea:focus-visible {
 }
 
 .home-composer-column {
+  display: grid;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -2997,9 +2999,9 @@ textarea:focus-visible {
 }
 
 .composer-validation-message {
-  width: min(760px, 100%);
-  margin: -12px auto 0;
-  padding: 0 32px;
+  width: 100%;
+  margin: 0;
+  padding: 0 18px;
   color: #ff756f;
   font-size: 13px;
   line-height: 1.5;

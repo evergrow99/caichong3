@@ -2066,7 +2066,11 @@ export function OrderConsole() {
                       {error && !shouldShowComposerValidationError ? <div className="message error">{error}</div> : null}
                     </div>
                   </form>
-                  {shouldShowComposerValidationError ? <div className="composer-validation-message">{error}</div> : null}
+                  {shouldShowComposerValidationError ? (
+                    <div className="composer-validation-message" role="alert">
+                      {error}
+                    </div>
+                  ) : null}
                 </div>
 
                 <PlatformActivityPanel activity={platformActivity} isLoading={isPlatformActivityLoading} isPaused={shouldPausePlatformActivity} />
