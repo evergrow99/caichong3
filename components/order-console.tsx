@@ -977,21 +977,20 @@ export function OrderConsole() {
     }
   }
 
-  async function syncHeartbeat() {
+  async function syncHeartbeat({ silent = false }: { silent?: boolean } = {}) {
     setIsSyncing(true);
-    setMessage(null);
-    setError(null);
+    if (!silent) {
+      setMessage(null);
+      setError(null);
+    }
 
     try {
-      const data = await readJson<{ checkedEvents: number; messages: string[] }>(
+      await readJson<{ checkedEvents: number; messages: string[] }>(
         await fetch("/api/sync/heartbeat", {
           method: "POST"
         })
       );
 
-      const detailMessage =
-        data.messages.length > 0 ? data.messages.join("；") : `已刷新，暂无新变化。`;
-      setMessage(detailMessage);
       setLastRefreshAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
       await loadTasks();
 
@@ -999,7 +998,9 @@ export function OrderConsole() {
         await loadTaskDetail(selectedTaskId);
       }
     } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : "刷新失败");
+      if (!silent) {
+        setError(syncError instanceof Error ? syncError.message : "刷新失败");
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -1380,7 +1381,7 @@ export function OrderConsole() {
     }
 
     const timer = window.setInterval(() => {
-      void syncHeartbeat();
+      void syncHeartbeat({ silent: true });
     }, 30 * 60 * 1000);
 
     return () => window.clearInterval(timer);
