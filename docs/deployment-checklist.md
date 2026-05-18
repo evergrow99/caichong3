@@ -23,11 +23,16 @@ SUPABASE_SERVICE_ROLE_KEY=<Supabase service_role key>
 CRON_SECRET=<一段只有你知道的随机字符串>
 ALLOW_DEV_LOGIN=false
 AUTH_SMS_PROVIDER=<真实短信服务标识，接入后填写>
+ALIYUN_SMS_SUBMISSION_TEMPLATE_CODE=<收到投稿提醒模板 Code>
+ALIYUN_SMS_SELECTION_STARTED_TEMPLATE_CODE=<进入选择期提醒模板 Code>
+ALIYUN_SMS_SELECTION_DEADLINE_TEMPLATE_CODE=<选择截止前 6 小时提醒模板 Code>
+ORDER_REMINDER_SYNC_INTERVAL_MINUTES=5
+ORDER_REMINDER_SUBMISSION_LOOKBACK_HOURS=48
 ```
 
 ## 定时心跳
 
-`vercel.json` 已配置每 30 分钟调用：
+生产环境建议每 5 分钟调用：
 
 ```text
 GET /api/sync/heartbeat
@@ -39,7 +44,7 @@ GET /api/sync/heartbeat
 Authorization: Bearer <CRON_SECRET>
 ```
 
-注意：Vercel Hobby 计划的 Cron 最低频率通常只能到每天一次；如果要严格按才虫规则每 30 分钟同步，需要使用 Vercel Pro，或改用外部定时服务调用同一个接口。
+注意：Vercel Hobby 计划的 Cron 最低频率通常只能到每天一次；如果要按现在的订单提醒和状态兜底规则每 5 分钟同步，需要使用 Vercel Pro，或改用 ECS/外部定时服务调用同一个接口。
 
 ## 才虫市场活跃统计
 
@@ -58,6 +63,31 @@ Authorization: Bearer <CRON_SECRET>
 
 如果部署在 ECS，`ecosystem.config.cjs` 已包含 `caichong3-market-sync` 进程，会启动后同步一次，之后按 `CAICHONG_MARKET_SYNC_INTERVAL_MINUTES` 持续同步。
 
+## 订单短信提醒
+
+上线前先在 Supabase SQL Editor 执行：
+
+```text
+supabase/migrations/0009_order_sms_reminders.sql
+```
+
+然后配置 3 个阿里云短信模板：
+
+```text
+你的任务有新投稿，请登录查看。
+你的任务已进入选择期，请在${deadline}前选择满意投稿。
+你的任务选择截止时间临近，请在${deadline}前处理，超时将自动关闭并退款。
+```
+
+部署后每 5 分钟调用：
+
+```text
+GET /api/sync/order-reminders
+Authorization: Bearer <CRON_SECRET>
+```
+
+这个接口会先同步平台订单状态，再按投稿和选择期节点发送提醒，并用 `order_sms_reminders.reminder_key` 防止重复发送。如果部署在 ECS，`ecosystem.config.cjs` 已包含 `caichong3-order-reminders` 进程。
+
 ## 上线前人工确认
 
 - 本地 `npm run build` 通过
@@ -66,6 +96,7 @@ Authorization: Bearer <CRON_SECRET>
 - Supabase 表已创建
 - Supabase SQL Editor 已执行 `supabase/migrations/0002_operation_logs.sql`
 - Supabase SQL Editor 已执行 `supabase/migrations/0008_market_activity.sql`
+- Supabase SQL Editor 已执行 `supabase/migrations/0009_order_sms_reminders.sql`
 - 才虫 Agent 已认领
 - 至少跑通过一次真实 1 元测试单
 - 确认 `.env.local` 不提交到仓库

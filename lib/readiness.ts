@@ -29,6 +29,15 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
   const hasAdminPhones = Boolean(process.env.ADMIN_PHONES?.split(",").map((phone) => phone.trim()).filter(Boolean).length);
   const hasCronSecret = Boolean(process.env.CRON_SECRET);
   const devLoginSafe = process.env.NODE_ENV !== "production" || process.env.ALLOW_DEV_LOGIN !== "true";
+  const hasOrderReminderSms = Boolean(
+    process.env.AUTH_SMS_PROVIDER === "aliyun" &&
+      process.env.ALIYUN_SMS_ACCESS_KEY_ID &&
+      process.env.ALIYUN_SMS_ACCESS_KEY_SECRET &&
+      process.env.ALIYUN_SMS_SIGN_NAME &&
+      process.env.ALIYUN_SMS_SUBMISSION_TEMPLATE_CODE &&
+      process.env.ALIYUN_SMS_SELECTION_STARTED_TEMPLATE_CODE &&
+      process.env.ALIYUN_SMS_SELECTION_DEADLINE_TEMPLATE_CODE
+  );
   const hasRealSmsLogin = Boolean(
     (process.env.AUTH_SMS_PROVIDER === "aliyun" &&
       process.env.ALIYUN_SMS_ACCESS_KEY_ID &&
@@ -41,6 +50,7 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
   const coreTablesReady = supabaseReady && (await checkSupabaseTable("orders"));
   const operationLogsReady = supabaseReady && (await checkSupabaseTable("operation_logs"));
   const smsTableReady = supabaseReady && (await checkSupabaseTable("sms_verifications"));
+  const orderReminderTableReady = supabaseReady && (await checkSupabaseTable("order_sms_reminders"));
 
   const items: ReadinessItem[] = [
     {
@@ -101,6 +111,16 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
           ? "已配置真实短信服务和验证码表。"
           : "还没有完整接入真实短信验证码，暂时不能对外开放真实用户注册登录。",
       action: "配置 AUTH_SMS_PROVIDER=aliyun、阿里云短信环境变量，并执行 supabase/migrations/0004_sms_verifications.sql。"
+    },
+    {
+      key: "order_reminder_sms",
+      label: "订单短信提醒",
+      ok: Boolean(hasOrderReminderSms && orderReminderTableReady),
+      detail:
+        hasOrderReminderSms && orderReminderTableReady
+          ? "已配置投稿和选择期提醒模板，提醒日志表可读取。"
+          : "订单短信提醒还未完整配置，选择期仍需要运营人工兜底。",
+      action: "配置三个订单提醒模板码，并执行 supabase/migrations/0009_order_sms_reminders.sql。"
     }
   ];
 

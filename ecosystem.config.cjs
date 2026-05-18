@@ -17,6 +17,15 @@ module.exports = {
         NODE_ENV: "production",
         PORT: "3000"
       }
+    },
+    {
+      name: "caichong3-order-reminders",
+      script: "scripts/sync-order-reminders.mjs",
+      interpreter: "node",
+      env: {
+        NODE_ENV: "production",
+        PORT: "3000"
+      }
     }
   ]
 };

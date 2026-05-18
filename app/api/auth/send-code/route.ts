@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { isAliyunSmsConfigured, sendAliyunLoginCode } from "@/lib/aliyun-sms";
+import { isAliyunLoginSmsConfigured, sendAliyunLoginCode } from "@/lib/aliyun-sms";
 import { isMainlandChinaPhone, normalizePhone } from "@/lib/auth-utils";
 import { assertCanSendSmsCode, generateSmsCode, saveSmsCode } from "@/lib/sms-code";
 
 export async function POST(request: Request) {
   try {
-    if (!isAliyunSmsConfigured()) {
+    if (!isAliyunLoginSmsConfigured()) {
       return NextResponse.json({ error: "真实短信服务未配置完整" }, { status: 503 });
     }
 

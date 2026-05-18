@@ -50,18 +50,30 @@ export function isAliyunSmsConfigured() {
     process.env.AUTH_SMS_PROVIDER === "aliyun" &&
       process.env.ALIYUN_SMS_ACCESS_KEY_ID &&
       process.env.ALIYUN_SMS_ACCESS_KEY_SECRET &&
-      process.env.ALIYUN_SMS_SIGN_NAME &&
-      process.env.ALIYUN_SMS_TEMPLATE_CODE
+      process.env.ALIYUN_SMS_SIGN_NAME
   );
 }
 
-export async function sendAliyunLoginCode(phone: string, code: string) {
+export function isAliyunLoginSmsConfigured() {
+  return Boolean(isAliyunSmsConfigured() && process.env.ALIYUN_SMS_TEMPLATE_CODE);
+}
+
+export function isAliyunOrderReminderSmsConfigured() {
+  return Boolean(
+    isAliyunSmsConfigured() &&
+      process.env.ALIYUN_SMS_SUBMISSION_TEMPLATE_CODE &&
+      process.env.ALIYUN_SMS_SELECTION_STARTED_TEMPLATE_CODE &&
+      process.env.ALIYUN_SMS_SELECTION_DEADLINE_TEMPLATE_CODE
+  );
+}
+
+export async function sendAliyunTemplateSms(phone: string, templateCode: string, templateParams: Record<string, string> = {}) {
   const url = buildSignedAliyunUrl({
     Action: "SendSms",
     PhoneNumbers: phone,
     SignName: requireSmsEnv("ALIYUN_SMS_SIGN_NAME"),
-    TemplateCode: requireSmsEnv("ALIYUN_SMS_TEMPLATE_CODE"),
-    TemplateParam: JSON.stringify({ code })
+    TemplateCode: templateCode,
+    TemplateParam: JSON.stringify(templateParams)
   });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
@@ -88,4 +100,8 @@ export async function sendAliyunLoginCode(phone: string, code: string) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function sendAliyunLoginCode(phone: string, code: string) {
+  return sendAliyunTemplateSms(phone, requireSmsEnv("ALIYUN_SMS_TEMPLATE_CODE"), { code });
 }
