@@ -31,12 +31,36 @@ export async function GET(request: Request) {
   const unauthorized = authorizeCron(request);
   if (unauthorized) return unauthorized;
 
+  let heartbeat:
+    | Awaited<ReturnType<typeof syncPlatformHeartbeat>>
+    | {
+        ok: false;
+        error: string;
+      };
+
   try {
-    const heartbeat = await syncPlatformHeartbeat();
+    heartbeat = await syncPlatformHeartbeat();
+  } catch (error) {
+    const message = getErrorMessage(error, "平台心跳同步失败，已继续执行本地短信提醒兜底");
+    heartbeat = {
+      ok: false,
+      error: message
+    };
+    await recordOperationLog({
+      scope: "order.sms_reminder.heartbeat",
+      level: "error",
+      message,
+      details: {
+        route: "GET /api/sync/order-reminders"
+      }
+    });
+  }
+
+  try {
     const reminders = await syncOrderSmsReminders();
 
     return NextResponse.json({
-      ok: reminders.ok,
+      ok: reminders.ok && !("ok" in heartbeat && heartbeat.ok === false),
       heartbeat,
       reminders
     });

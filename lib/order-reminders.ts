@@ -2,6 +2,7 @@ import { isAliyunOrderReminderSmsConfigured, sendAliyunTemplateSms } from "@/lib
 import { getErrorMessage } from "@/lib/errors";
 import { recordOperationLog } from "@/lib/operation-log";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase/server";
+import { getDerivedTaskLifecycle } from "@/lib/task-rules";
 
 type ReminderType = "SUBMISSION_RECEIVED" | "SELECTION_STARTED" | "SELECTION_DEADLINE_6H";
 type ReminderStatus = "PENDING" | "SENT" | "FAILED" | "SKIPPED";
@@ -125,7 +126,22 @@ async function listCandidateOrders() {
     throw new Error(`读取待提醒订单失败：${error.message}`);
   }
 
-  return (data || []) as ReminderOrderRow[];
+  return ((data || []) as ReminderOrderRow[])
+    .map((order) => {
+      const lifecyclePatch = getDerivedTaskLifecycle({
+        status: order.status,
+        deadlineAt: order.deadline_at || undefined,
+        submissionCount: order.submission_count || 0,
+        closeReason: undefined
+      });
+
+      return {
+        ...order,
+        status: lifecyclePatch?.status || order.status,
+        deadline_at: lifecyclePatch?.deadlineAt || order.deadline_at
+      };
+    })
+    .filter((order) => order.status === "ACTIVE" || order.status === "PENDING_SELECTION");
 }
 
 async function listPhonesByUserId(userIds: string[]) {
