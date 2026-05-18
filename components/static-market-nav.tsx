@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 type StaticMarketNavProps = {
-  active: "rules" | "work";
+  active: "market" | "rules" | "work";
 };
 
 export function StaticMarketNav({ active }: StaticMarketNavProps) {
@@ -16,6 +16,11 @@ export function StaticMarketNav({ active }: StaticMarketNavProps) {
         <Link href="/" className="market-nav-link">
           发任务
         </Link>
+        {active === "market" ? (
+          <Link href="/market" className="market-nav-link active">
+            市场动态
+          </Link>
+        ) : null}
         <Link href="/market-rules" className={`market-nav-link ${active === "rules" ? "active" : ""}`}>
           市场规则
         </Link>

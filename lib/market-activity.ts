@@ -10,6 +10,8 @@ export type MarketActivityItem = {
   createdAt?: string;
 };
 
+export type MarketActivityCategory = "全部" | "文案" | "图片" | "声音" | "视频";
+
 export type MarketActivitySummary = {
   todayOrderCount: number;
   monthOrderCount: number;
@@ -20,6 +22,26 @@ export type MarketActivitySummary = {
   recentOrders: MarketActivityItem[];
   lastSyncedAt?: string;
   source: "caichong_observed" | "unavailable";
+};
+
+export type MarketFeedItem = {
+  taskId: string;
+  title: string;
+  description: string;
+  category: Exclude<MarketActivityCategory, "全部">;
+  status: string;
+  statusLabel: string;
+  createdAt?: string;
+};
+
+export type MarketFeedResponse = {
+  items: MarketFeedItem[];
+  categories: { key: MarketActivityCategory; label: string; count: number }[];
+  topics: { label: string; count: number }[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 export type MarketActivitySyncResult = {
@@ -77,6 +99,15 @@ const MARKET_STATE_ID = "default";
 const MARKET_BASELINE_ID = "default";
 const DEFAULT_SYNC_INTERVAL_MINUTES = 30;
 const DEFAULT_MAX_MARKET_PAGES = 10;
+const MARKET_CATEGORIES: MarketActivityCategory[] = ["全部", "文案", "图片", "声音", "视频"];
+const TOPIC_RULES = [
+  { label: "小红书文案", pattern: /小红书|种草|笔记|标题/ },
+  { label: "视频脚本", pattern: /视频|脚本|短视频|vlog|分镜|剪辑/ },
+  { label: "图文海报", pattern: /海报|图文|主图|封面|配图|图片/ },
+  { label: "城市文旅", pattern: /文旅|旅游|城市|攻略|景区|出行/ },
+  { label: "品牌推广", pattern: /推广|品牌|产品|营销|宣传|卖点/ },
+  { label: "声音制作", pattern: /配音|音频|音乐|声音|歌曲|降噪/ }
+];
 
 function isMissingTableError(error: { code?: string; message?: string }) {
   return error.code === "42P01" || error.code === "PGRST205" || Boolean(error.message?.includes("Could not find the table"));
@@ -105,6 +136,44 @@ function getMarketApiKey() {
 
 function getTaskAmount(task: ExploreTask) {
   return Number(task.totalPrice || task.price || 0);
+}
+
+export function getPublicMarketDescription(description: string) {
+  return description
+    .replace(/爱虫是一个caichong\.net的外挂平台，?/gi, "这是一个内容创作服务平台，")
+    .replace(/^真实接口联调测试：?/, "")
+    .replace(/^真实接口测试订单：?/, "测试任务：")
+    .replace("这是平台联调使用的小额测试任务。", "这是一条小额测试任务。")
+    .replace(/aichong\.top/gi, "平台入口")
+    .replace(/caichong\.net/gi, "平台")
+    .replace(/caichong/gi, "平台")
+    .replace(/AICHONG/gi, "平台")
+    .replace(/爱虫/g, "平台")
+    .replace(/才虫/g, "平台")
+    .replace(/agent/gi, "服务方")
+    .replace(/龙虾/g, "高级工具")
+    .replace(/外挂/g, "辅助")
+    .trim();
+}
+
+export function getMarketActivityCategory(description: string): Exclude<MarketActivityCategory, "全部"> {
+  const text = description.toLowerCase();
+  if (/文案|文章|脚本|总结|回复|攻略|标题|小红书|公众号|金句|口号/.test(text)) return "文案";
+  if (/音频|配音|声音|音乐|歌曲|降噪|录音/.test(text)) return "声音";
+  if (/视频|剪辑|字幕|vlog|数字人|短片|混剪|分镜/.test(text)) return "视频";
+  if (/图|图片|海报|头像|主图|修图|插画|封面|设计|logo|品牌|视觉|排版|名片/.test(text)) return "图片";
+  return "文案";
+}
+
+function getMarketTaskTitle(description: string) {
+  const normalized = getPublicMarketDescription(description).replace(/\s+/g, " ").trim();
+  if (!normalized) return "新的创作需求";
+  return normalized.length > 42 ? `${normalized.slice(0, 42)}...` : normalized;
+}
+
+function getMarketStatusLabel(status: string) {
+  if (status === "COMPLETED" || status === "CLOSED") return "已完成";
+  return "进行中";
 }
 
 function toIsoDate(value?: string) {
@@ -486,6 +555,100 @@ async function getBaseline() {
 
 function sumRows(rows: { total_price: number | string }[]) {
   return rows.reduce((total, row) => total + Number(row.total_price || 0), 0);
+}
+
+function mapObservedTaskToMarketItem(task: MarketObservedTaskRow): MarketFeedItem {
+  const description = getPublicMarketDescription(task.description);
+  const category = getMarketActivityCategory(description);
+
+  return {
+    taskId: task.task_id,
+    title: getMarketTaskTitle(description),
+    description,
+    category,
+    status: task.status,
+    statusLabel: getMarketStatusLabel(task.status),
+    createdAt: task.activity_at
+  };
+}
+
+export async function getMarketFeed({
+  category = "全部",
+  page = 1,
+  pageSize = 18
+}: {
+  category?: MarketActivityCategory;
+  page?: number;
+  pageSize?: number;
+} = {}): Promise<MarketFeedResponse> {
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      items: [],
+      categories: MARKET_CATEGORIES.map((key) => ({ key, label: key, count: 0 })),
+      topics: [],
+      page,
+      pageSize,
+      total: 0,
+      totalPages: 1
+    };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("market_observed_tasks")
+    .select("task_id, description, total_price, status, activity_at")
+    .order("activity_at", { ascending: false })
+    .limit(5000);
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      return {
+        items: [],
+        categories: MARKET_CATEGORIES.map((key) => ({ key, label: key, count: 0 })),
+        topics: [],
+        page,
+        pageSize,
+        total: 0,
+        totalPages: 1
+      };
+    }
+
+    throw new Error(`读取市场动态任务失败：${error.message}`);
+  }
+
+  const items = ((data || []) as MarketObservedTaskRow[]).map(mapObservedTaskToMarketItem);
+  const categoryCounts = new Map<MarketActivityCategory, number>(MARKET_CATEGORIES.map((key) => [key, key === "全部" ? items.length : 0]));
+
+  for (const item of items) {
+    categoryCounts.set(item.category, (categoryCounts.get(item.category) || 0) + 1);
+  }
+
+  const filteredItems = category === "全部" ? items : items.filter((item) => item.category === category);
+  const safePageSize = Math.min(48, Math.max(6, Number.isFinite(pageSize) ? pageSize : 18));
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / safePageSize));
+  const safePage = Math.min(totalPages, Math.max(1, Number.isFinite(page) ? page : 1));
+  const start = (safePage - 1) * safePageSize;
+  const topics = TOPIC_RULES.map((topic) => ({
+    label: topic.label,
+    count: items.filter((item) => topic.pattern.test(item.description)).length
+  }))
+    .filter((topic) => topic.count > 0)
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 6);
+
+  return {
+    items: filteredItems.slice(start, start + safePageSize),
+    categories: MARKET_CATEGORIES.map((key) => ({
+      key,
+      label: key,
+      count: categoryCounts.get(key) || 0
+    })),
+    topics,
+    page: safePage,
+    pageSize: safePageSize,
+    total: filteredItems.length,
+    totalPages
+  };
 }
 
 export async function getMarketActivitySummary(): Promise<MarketActivitySummary> {

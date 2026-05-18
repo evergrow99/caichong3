@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { isAdminUser } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/current-user";
 import { syncPlatformHeartbeat } from "@/lib/heartbeat-sync";
@@ -8,6 +9,8 @@ import { getReadinessReport } from "@/lib/readiness";
 import { listAdminOrders } from "@/lib/order-repository";
 import { getTaskStatusLabel, taskStatusRules } from "@/lib/task-rules";
 import { listAdminUsers } from "@/lib/user-profile";
+
+type AdminOrderPreview = Awaited<ReturnType<typeof listAdminOrders>>["orders"][number];
 
 function getOrderAction(order: { status: string; submissionCount: number }) {
   if (order.status === "PENDING_PAYMENT") {
@@ -23,6 +26,39 @@ function getOrderAction(order: { status: string; submissionCount: number }) {
   }
 
   return "";
+}
+
+function getSelectionReminderLevel(order: Pick<AdminOrderPreview, "deadlineAt">) {
+  if (!order.deadlineAt) return "normal";
+  const deadline = new Date(order.deadlineAt);
+  if (Number.isNaN(deadline.getTime())) return "normal";
+
+  const remainingHours = (deadline.getTime() - Date.now()) / (60 * 60 * 1000);
+  if (remainingHours <= 0) return "overdue";
+  if (remainingHours <= 6) return "critical";
+  return "normal";
+}
+
+function getSelectionReminderCopy(order: Pick<AdminOrderPreview, "deadlineAt">) {
+  if (!order.deadlineAt) return "选择截止时间暂未同步，请先手动同步全部订单。";
+  const deadline = new Date(order.deadlineAt);
+  if (Number.isNaN(deadline.getTime())) return "选择截止时间暂未同步，请先手动同步全部订单。";
+
+  const remainingMinutes = Math.floor((deadline.getTime() - Date.now()) / 60000);
+  if (remainingMinutes <= 0) return "选择期可能已经超时，请立即同步并确认订单状态。";
+  if (remainingMinutes < 60) return `距离选择截止约 ${remainingMinutes} 分钟。`;
+
+  const remainingHours = Math.floor(remainingMinutes / 60);
+  if (remainingHours < 24) return `距离选择截止约 ${remainingHours} 小时。`;
+
+  return `选择截止 ${formatDate(order.deadlineAt)}。`;
+}
+
+function sortSelectionReminderOrders(left: AdminOrderPreview, right: AdminOrderPreview) {
+  const leftDeadline = left.deadlineAt ? new Date(left.deadlineAt).getTime() : Number.MAX_SAFE_INTEGER;
+  const rightDeadline = right.deadlineAt ? new Date(right.deadlineAt).getTime() : Number.MAX_SAFE_INTEGER;
+
+  return leftDeadline - rightDeadline;
 }
 
 function formatDate(value?: string) {
@@ -53,17 +89,7 @@ export default async function AdminPage() {
   const user = await getCurrentUser();
 
   if (!isAdminUser(user)) {
-    return (
-      <main className="page-shell">
-        <section className="panel admin-empty">
-          <h1>运营后台</h1>
-          <p>当前手机号没有管理员权限。请先用管理员手机号登录，再打开这个页面。</p>
-          <Link className="btn primary link-button" href="/">
-            返回发单工作台
-          </Link>
-        </section>
-      </main>
-    );
+    redirect(`/admin/login?reason=${user.authMode === "phone" ? "forbidden" : "login"}`);
   }
 
   const [{ orders, summary }, users, operationLogs, readiness] = await Promise.all([
@@ -72,7 +98,17 @@ export default async function AdminPage() {
     listOperationLogs(20),
     getReadinessReport()
   ]);
-  const actionOrders = orders.filter((order) => order.isRealCaichongTask && getOrderAction(order)).slice(0, 5);
+  const selectionReminderOrders = orders
+    .filter((order) => order.isRealCaichongTask && order.status === "PENDING_SELECTION")
+    .sort(sortSelectionReminderOrders);
+  const actionOrders = orders
+    .filter((order) => order.isRealCaichongTask && getOrderAction(order))
+    .sort((left, right) => {
+      if (left.status === "PENDING_SELECTION" && right.status !== "PENDING_SELECTION") return -1;
+      if (right.status === "PENDING_SELECTION" && left.status !== "PENDING_SELECTION") return 1;
+      return 0;
+    })
+    .slice(0, 5);
 
   return (
     <main className="page-shell admin-shell">
@@ -142,6 +178,10 @@ export default async function AdminPage() {
           <span>待选择</span>
           <strong>{summary.pendingSelection}</strong>
         </div>
+        <div className="metric-card urgent-metric-card">
+          <span>需提醒用户</span>
+          <strong>{selectionReminderOrders.length}</strong>
+        </div>
         <div className="metric-card">
           <span>已完成</span>
           <strong>{summary.completed}</strong>
@@ -185,6 +225,36 @@ export default async function AdminPage() {
             </table>
           ) : (
             <div className="empty-state">还没有用户数据。</div>
+          )}
+        </div>
+      </section>
+
+      <section className="panel admin-panel selection-reminder-panel">
+        <div className="panel-header">
+          <h2>采用提醒兜底</h2>
+          <p>才虫生命周期短信会发给平台代理身份；这里列出需要运营主动提醒用户采用投稿的真实订单。</p>
+        </div>
+
+        <div className="action-orders">
+          {selectionReminderOrders.length > 0 ? (
+            selectionReminderOrders.slice(0, 8).map((order) => (
+              <article className={`action-order selection-alert ${getSelectionReminderLevel(order)}`} key={order.id}>
+                <div>
+                  <strong>需要提醒用户采用投稿</strong>
+                  <p>{order.description}</p>
+                  <span>用户 {order.userPhone || order.userId}</span>
+                  <span>截止 {formatDate(order.deadlineAt)}</span>
+                  <span>ID {order.caichongTaskId}</span>
+                </div>
+                <div className="action-order-meta">
+                  <span className="chip danger-chip">{getSelectionReminderCopy(order)}</span>
+                  <span className="chip">投稿 {order.submissionCount}</span>
+                  <span className="chip">¥{order.price.toFixed(2)}</span>
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="empty-state">当前没有进入选择期的真实订单。</div>
           )}
         </div>
       </section>

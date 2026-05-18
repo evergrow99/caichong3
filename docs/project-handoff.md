@@ -153,7 +153,8 @@ Vercel:
 
 Current `/admin` includes:
 
-- access control by `ADMIN_PHONES`
+- dedicated admin login at `/admin/login`
+- admin phone access control by `ADMIN_PHONES`
 - platform heartbeat trigger
 - readiness checks
 - metrics
@@ -162,11 +163,19 @@ Current `/admin` includes:
 - status rules
 - operation logs
 
+Admin login behavior:
+
+- Visiting `/admin` without an admin session redirects to `/admin/login?reason=login`.
+- Visiting `/admin` with a non-admin phone session redirects to `/admin/login?reason=forbidden`.
+- `/admin/login` uses administrator phone + SMS code.
+- Local development supports `ALLOW_DEV_LOGIN=true` and code `123456` through `/api/admin/login`.
+- `/api/admin/send-code` checks the phone is in `ADMIN_PHONES` before sending or returning the development-code hint.
+- Local `.env.local` admin phone was changed to `18201500661`.
+
 Pending/uncommitted local work appears to include:
 
 - user list with phone, registration time, last login time, and order count
 - registered user metric
-- admin login route/components
 - market pages/activity UI
 
 Treat these as already-started work. Read diffs before editing; do not overwrite them.
@@ -194,9 +203,6 @@ Uncommitted local changes at handoff:
 ?? app/api/platform/market/
 ?? app/market/
 ?? components/admin-login-form.tsx
-?? components/market-dynamics-client.tsx
-?? public/icons/case-design.svg
-?? public/icons/case-other.svg
 ```
 
 These are not part of the heartbeat/SMS fixes. Do not revert them unless the user explicitly asks.
@@ -220,4 +226,8 @@ These are not part of the heartbeat/SMS fixes. Do not revert them unless the use
 - `lib/heartbeat-sync.ts`
 - `lib/order-reminders.ts`
 - `.github/workflows/order-reminders.yml`
+- `app/admin/login/page.tsx`
+- `components/admin-login-form.tsx`
+- `app/api/admin/login/route.ts`
+- `app/api/admin/send-code/route.ts`
 - `supabase/migrations/`

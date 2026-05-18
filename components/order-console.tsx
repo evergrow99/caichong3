@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { AppConfirmDialog, AppToast } from "@/components/app-dialog";
 import type { PublishTask, Submission } from "@/lib/caichong";
+import type { MarketActivityCategory, MarketActivitySummary, MarketFeedItem, MarketFeedResponse } from "@/lib/market-activity";
 import {
   canSelectSubmission,
   getCloseReasonLabel,
@@ -78,6 +79,11 @@ type PlatformActivitySummary = {
   recentOrders: PlatformActivityItem[];
   lastSyncedAt?: string;
   source: "caichong_observed" | "unavailable";
+};
+
+type MarketHomePreviewData = {
+  summary: MarketActivitySummary;
+  feed: MarketFeedResponse;
 };
 
 type TaskFilter = "all" | "ACTIVE" | "PENDING_SELECTION" | "COMPLETED" | "CLOSED";
@@ -610,10 +616,15 @@ function getActivityDescription(description: string) {
 
 function getPublicActivityDescription(description: string) {
   return getDisplayTaskDescription(description)
+    .replace(/爱虫是一个caichong\.net的外挂平台，?/gi, "这是一个内容创作服务平台，")
+    .replace(/aichong\.top/gi, "平台入口")
     .replace(/caichong\.net/gi, "平台")
     .replace(/caichong/gi, "平台")
+    .replace(/AICHONG/gi, "平台")
+    .replace(/爱虫/g, "平台")
     .replace(/才虫/g, "平台")
     .replace(/agent/gi, "服务方")
+    .replace(/龙虾/g, "高级工具")
     .replace(/外挂/g, "辅助");
 }
 
@@ -626,8 +637,64 @@ function getActivityCategory(description: string) {
   return "任务";
 }
 
+function formatMarketPreviewAmount(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "¥0";
+  if (value >= 10000) {
+    const amount = value / 10000;
+    return `¥${Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(1)}万`;
+  }
+
+  return `¥${Math.round(value).toLocaleString("zh-CN")}`;
+}
+
+function getMarketPreviewIcon(category: MarketFeedItem["category"]) {
+  const iconMap: Record<MarketFeedItem["category"], string> = {
+    文案: "/icons/case-copy.svg",
+    图片: "/icons/case-image.svg",
+    声音: "/icons/case-music.svg",
+    视频: "/icons/case-video.svg"
+  };
+
+  return iconMap[category];
+}
+
 function isSyncableTask(task: PublishTask) {
   return isSyncableTaskStatus(task.status);
+}
+
+function getSelectionReminder(task: PublishTask) {
+  if (task.status === "PENDING_SELECTION") {
+    const deadline = task.deadlineAt ? new Date(task.deadlineAt) : null;
+    const remainingMinutes = deadline && !Number.isNaN(deadline.getTime()) ? Math.floor((deadline.getTime() - Date.now()) / 60000) : null;
+    const isUrgent = remainingMinutes !== null && remainingMinutes <= 6 * 60;
+    const isOverdue = remainingMinutes !== null && remainingMinutes <= 0;
+
+    if (isOverdue) {
+      return {
+        tone: "urgent" as const,
+        title: "选择期可能已经结束",
+        body: "请先刷新订单状态。如果仍可采用，请尽快选择一份满意投稿。"
+      };
+    }
+
+    return {
+      tone: isUrgent ? ("urgent" as const) : ("warning" as const),
+      title: isUrgent ? "请尽快采用投稿" : "有投稿待你选择",
+      body: task.deadlineAt
+        ? `请在 ${formatDateTimeToMinute(task.deadlineAt)} 前采用一份投稿。超时订单会关闭并退款。`
+        : "订单已进入选择期，请尽快采用一份投稿。超时订单会关闭并退款。"
+    };
+  }
+
+  if (task.status === "ACTIVE" && getSubmissionCount(task) > 0) {
+    return {
+      tone: "normal" as const,
+      title: "已收到投稿",
+      body: "如果已有满意结果，可以提前采用；也可以继续等待更多投稿。"
+    };
+  }
+
+  return null;
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -702,7 +769,7 @@ function PlatformActivityPanel({
           <article className="platform-live-item" key={activeOrder.taskId}>
             <span className="platform-live-kind">{getActivityCategory(activeOrder.description)}</span>
             <span className="platform-live-content">
-              <strong title={getPublicActivityDescription(activeOrder.description)}>{getActivityDescription(activeOrder.description)}</strong>
+              <strong>{getActivityDescription(activeOrder.description)}</strong>
               <span className="platform-live-meta">
                 {formatActivityTime(activeOrder.createdAt)}
               </span>
@@ -714,7 +781,149 @@ function PlatformActivityPanel({
   );
 }
 
-export function OrderConsole() {
+function MarketHomePreviewPanel({ feed: initialFeed, summary }: MarketHomePreviewData) {
+  const [feed, setFeed] = useState(initialFeed);
+  const [activeCategory, setActiveCategory] = useState<MarketActivityCategory>("全部");
+  const [selectedTask, setSelectedTask] = useState<MarketFeedItem | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFilterPinned, setIsFilterPinned] = useState(false);
+  const filterSentinelRef = useRef<HTMLDivElement | null>(null);
+  const marketStats = [
+    ["今日发单", summary.todayOrderCount.toLocaleString("zh-CN")],
+    ["本月发单", summary.monthOrderCount.toLocaleString("zh-CN")],
+    ["本月发单额", formatMarketPreviewAmount(summary.monthOrderAmount)],
+    ["累计发单", summary.totalOrderCount.toLocaleString("zh-CN")]
+  ];
+  const previewItems = feed.items;
+
+  async function changeCategory(category: MarketActivityCategory) {
+    setActiveCategory(category);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(`/api/platform/market?category=${encodeURIComponent(category)}&pageSize=48`, {
+        cache: "no-store"
+      });
+      setFeed(await readJson<MarketFeedResponse>(response));
+    } catch {
+      setFeed((currentFeed) => ({
+        ...currentFeed,
+        items: []
+      }));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function openTaskFromKeyboard(event: KeyboardEvent<HTMLElement>, item: MarketFeedItem) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    setSelectedTask(item);
+  }
+
+  useEffect(() => {
+    const sentinel = filterSentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+
+    const root = sentinel.closest(".studio-content");
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsFilterPinned(!entry.isIntersecting);
+    }, { root });
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <section className="home-market-preview" aria-label="首页市场动态预览">
+      <div className="home-market-stats" aria-label="发单统计">
+        {marketStats.map(([label, value]) => (
+          <div className="home-market-stat" key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="home-market-use-cases">
+        <div className="home-market-sticky-sentinel" ref={filterSentinelRef} aria-hidden="true" />
+        <div className={`home-market-use-case-bar${isFilterPinned ? " is-pinned" : ""}`}>
+          <div className="home-market-category-tabs" aria-label="任务类型筛选">
+            {feed.categories.map((category) => (
+              <button
+                className={activeCategory === category.key ? "active" : ""}
+                key={category.key}
+                type="button"
+                onClick={() => void changeCategory(category.key)}
+              >
+                <span>{category.label}</span>
+                <small>{category.count}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={`home-market-card-grid ${isLoading ? "is-loading" : ""}`} aria-busy={isLoading}>
+          {previewItems.length > 0 ? (
+            previewItems.map((item) => (
+              <article
+                className={`market-task-card market-task-card-compact market-task-card-${item.category}`}
+                key={item.taskId}
+                role="button"
+                tabIndex={0}
+                aria-label={`查看需求：${item.title}`}
+                onClick={() => setSelectedTask(item)}
+                onKeyDown={(event) => openTaskFromKeyboard(event, item)}
+              >
+                <div className="market-task-card-top">
+                  <span>{item.category}</span>
+                  <small>{formatActivityTime(item.createdAt)}</small>
+                </div>
+                <h2>{item.title}</h2>
+                <img className="market-task-card-figure" src={getMarketPreviewIcon(item.category)} alt="" aria-hidden="true" />
+                <div className="market-task-card-bottom">
+                  <span>{item.statusLabel}</span>
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="home-market-empty">当前分类暂无可展示任务。</div>
+          )}
+        </div>
+      </div>
+
+      {selectedTask ? (
+        <div className="market-detail-layer">
+          <button className="market-detail-backdrop" aria-label="关闭详情" type="button" onClick={() => setSelectedTask(null)} />
+          <section className="market-detail-modal" role="dialog" aria-modal="true" aria-labelledby="market-home-detail-title">
+            <button className="market-detail-close" aria-label="关闭详情" type="button" onClick={() => setSelectedTask(null)}>
+              <Icon name="close" />
+            </button>
+            <div className="market-detail-header">
+              <div>
+                <span>{selectedTask.category}</span>
+                <h2 id="market-home-detail-title">{selectedTask.title}</h2>
+              </div>
+            </div>
+            <div className="market-detail-meta">
+              <span>{selectedTask.statusLabel}</span>
+              <span>{formatActivityTime(selectedTask.createdAt)}</span>
+            </div>
+            <div className="market-detail-body">
+              {selectedTask.description.split(/\n{2,}/).map((paragraph, index) => (
+                <p key={`${selectedTask.taskId}-${index}`}>{paragraph}</p>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePreviewData } = {}) {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [loginPhone, setLoginPhone] = useState("");
@@ -762,12 +971,16 @@ export function OrderConsole() {
   const [pendingPaymentUrl, setPendingPaymentUrl] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [readSubmissionCounts, setReadSubmissionCounts] = useState<Record<string, number>>({});
-  const [composerAttachmentScroll, setComposerAttachmentScroll] = useState({ canScrollLeft: false, canScrollRight: false });
-  const composerAttachmentsRef = useRef<HTMLDivElement | null>(null);
   const descriptionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const compactDescriptionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const homeComposerFormRef = useRef<HTMLFormElement | null>(null);
+  const compactComposerFormRef = useRef<HTMLFormElement | null>(null);
   const filterMenuRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const shouldPublishAfterLoginRef = useRef(false);
+  const [isCompactComposerVisible, setIsCompactComposerVisible] = useState(false);
+  const [isCompactComposerExpanded, setIsCompactComposerExpanded] = useState(false);
+  const [usesShortCompactPrompt, setUsesShortCompactPrompt] = useState(false);
   const canLogin = isPhoneValid(loginPhone) && isCodeValid(loginCode) && !isLoggingIn;
   const canSendCode = isPhoneValid(loginPhone) && !isSendingCode && codeCooldown === 0;
   const isPhoneLoggedIn = currentUser?.authMode === "phone";
@@ -783,6 +996,7 @@ export function OrderConsole() {
   const shouldShowSidebarOrders = Boolean(isPhoneLoggedIn && hasLoadedTasks && visibleTasks.length > 0);
   const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
   const hasUnreadSubmissionsAcrossTasks = visibleTasks.some(hasUnreadSubmissions);
+  const selectedTaskReminder = selectedTask ? getSelectionReminder(selectedTask) : null;
 
   function resizeDescriptionTextarea() {
     const textarea = descriptionTextareaRef.current;
@@ -886,33 +1100,23 @@ export function OrderConsole() {
     window.history.replaceState(null, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
   }
 
-  function scrollComposerAttachments(direction: "left" | "right") {
-    const list = composerAttachmentsRef.current;
-    if (!list) return;
-
-    list.scrollBy({
-      left: direction === "left" ? -240 : 240,
-      behavior: "smooth"
-    });
-  }
-
-  function updateComposerAttachmentScrollState() {
-    const list = composerAttachmentsRef.current;
-    if (!list) {
-      setComposerAttachmentScroll({ canScrollLeft: false, canScrollRight: false });
-      return;
+  function focusHomeComposer() {
+    const scroller = document.querySelector(".studio-content");
+    const composer = homeComposerFormRef.current;
+    setIsCompactComposerExpanded(false);
+    if (scroller instanceof HTMLElement && composer) {
+      scroller.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+      scroller.scrollTop = 0;
+      scroller.scrollLeft = 0;
+    } else {
+      composer?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
     }
-
-    const maxScrollLeft = list.scrollWidth - list.clientWidth;
-    const canScroll = maxScrollLeft > 2;
-    const canScrollLeft = canScroll && list.scrollLeft > 2;
-    const canScrollRight = canScroll && list.scrollLeft < maxScrollLeft - 2;
-
-    setComposerAttachmentScroll((current) =>
-      current.canScrollLeft === canScrollLeft && current.canScrollRight === canScrollRight
-        ? current
-        : { canScrollLeft, canScrollRight }
-    );
+    window.requestAnimationFrame(() => {
+      if (scroller instanceof HTMLElement) {
+        scroller.scrollLeft = 0;
+      }
+      descriptionTextareaRef.current?.focus({ preventScroll: true });
+    });
   }
 
   async function loadTasks() {
@@ -1497,8 +1701,87 @@ export function OrderConsole() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(max-width: 720px)");
+    const updateCompactPrompt = () => setUsesShortCompactPrompt(mediaQuery.matches);
+    updateCompactPrompt();
+    mediaQuery.addEventListener("change", updateCompactPrompt);
+    return () => mediaQuery.removeEventListener("change", updateCompactPrompt);
+  }, []);
+
+  useEffect(() => {
     resizeDescriptionTextarea();
   }, [description]);
+
+  useEffect(() => {
+    const textarea = compactDescriptionTextareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "auto";
+    const minHeight = isCompactComposerExpanded ? COMPOSER_TEXTAREA_MIN_HEIGHT : 42;
+    const maxHeight = isCompactComposerExpanded ? COMPOSER_TEXTAREA_MAX_HEIGHT : 42;
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [description, isCompactComposerExpanded]);
+
+  useEffect(() => {
+    if (!marketPreview || selectedTaskId) {
+      setIsCompactComposerVisible(false);
+      setIsCompactComposerExpanded(false);
+      return;
+    }
+
+    const composerNode = homeComposerFormRef.current;
+    if (!composerNode || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      const shouldShowCompactComposer = !entry.isIntersecting && entry.boundingClientRect.bottom < 0;
+      setIsCompactComposerVisible(shouldShowCompactComposer);
+      if (!shouldShowCompactComposer) {
+        setIsCompactComposerExpanded(false);
+      }
+    });
+
+    observer.observe(composerNode);
+    return () => observer.disconnect();
+  }, [marketPreview, selectedTaskId]);
+
+  useEffect(() => {
+    if (!isCompactComposerExpanded) {
+      return;
+    }
+
+    function collapseCompactComposer() {
+      setIsCompactComposerExpanded(false);
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const composerNode = compactComposerFormRef.current;
+      if (!composerNode || !(event.target instanceof Node) || composerNode.contains(event.target)) {
+        return;
+      }
+
+      collapseCompactComposer();
+    }
+
+    const scroller = document.querySelector(".studio-content");
+    document.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("scroll", collapseCompactComposer, { passive: true });
+    scroller?.addEventListener("scroll", collapseCompactComposer, { passive: true });
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("scroll", collapseCompactComposer);
+      scroller?.removeEventListener("scroll", collapseCompactComposer);
+    };
+  }, [isCompactComposerExpanded]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1518,16 +1801,6 @@ export function OrderConsole() {
     if (taskIdFromUrl) {
       setSelectedTaskId(taskIdFromUrl);
     }
-  }, []);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(updateComposerAttachmentScrollState);
-    return () => window.cancelAnimationFrame(frame);
-  }, [attachments.length]);
-
-  useEffect(() => {
-    window.addEventListener("resize", updateComposerAttachmentScrollState);
-    return () => window.removeEventListener("resize", updateComposerAttachmentScrollState);
   }, []);
 
   useEffect(() => {
@@ -1609,7 +1882,11 @@ export function OrderConsole() {
   }, [toastMessage]);
 
   return (
-    <main className={`studio-shell ${!selectedTaskId ? "home-active" : "detail-active"} ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+    <main
+      className={`studio-shell ${!selectedTaskId ? "home-active" : "detail-active"} ${
+        marketPreview ? "market-preview-active" : ""
+      } ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}
+    >
       <button
         aria-label="打开菜单"
         className="mobile-menu-button"
@@ -1642,7 +1919,14 @@ export function OrderConsole() {
 
       <aside className={`studio-sidebar ${isMenuOpen ? "open" : ""}`}>
         <div className="studio-brand-block">
-          <Link className="studio-brand" href="/" onClick={() => setIsMenuOpen(false)}>
+          <Link
+            className="studio-brand"
+            href="/"
+            onClick={() => {
+              updateSelectedTask(null);
+              setIsMenuOpen(false);
+            }}
+          >
             <img className="brand-logo-image brand-logo-wordmark" src="/logo.svg" alt="AICHONG" />
             <img className="brand-logo-image brand-logo-mark" src="/logo-mark.svg" alt="" aria-hidden="true" />
           </Link>
@@ -1654,7 +1938,7 @@ export function OrderConsole() {
           >
             <Icon name={isSidebarCollapsed ? "sidebarExpand" : "sidebarCollapse"} />
           </button>
-          <button className="drawer-close sidebar-close" aria-label="收起侧栏" title="收起" type="button" onClick={() => setIsMenuOpen(false)}>
+          <button className="drawer-close sidebar-close" aria-label="收起侧栏" type="button" onClick={() => setIsMenuOpen(false)}>
             <Icon name="sidebarCollapse" />
           </button>
         </div>
@@ -1712,7 +1996,7 @@ export function OrderConsole() {
                   >
                     <span className="sidebar-task-title">{getDisplayTaskDescription(task.description)}</span>
                     <span className="sidebar-task-meta">
-                      <span className="sidebar-task-submission-count" title={`${getSubmissionCount(task)} 接单`}>
+                      <span className="sidebar-task-submission-count">
                         {getSubmissionCount(task)}
                       </span>
                       <span className={`sidebar-task-status ${getSidebarStatusClassName(task.status)}`}>
@@ -1869,41 +2153,21 @@ export function OrderConsole() {
 
               <div className="home-publish-layout">
                 <div className="home-composer-column">
-                  <form className="hero-task-card studio-composer home-composer" onSubmit={createTask} noValidate>
+                  <form className="hero-task-card studio-composer home-composer" ref={homeComposerFormRef} onSubmit={createTask} noValidate>
                     <div className="form-body">
                       {attachments.length > 0 ? (
-                        <div
-                          className={`composer-attachments-wrap ${composerAttachmentScroll.canScrollLeft ? "has-left-button" : ""} ${
-                            composerAttachmentScroll.canScrollRight ? "has-right-button" : ""
-                          }`}
-                        >
-                          {composerAttachmentScroll.canScrollLeft ? (
-                            <button
-                              className="composer-attachment-scroll-button left"
-                              aria-label="向左滚动附件"
-                              title="向左"
-                              type="button"
-                              onClick={() => scrollComposerAttachments("left")}
-                            >
-                              <Icon name="chevron" />
-                            </button>
-                          ) : null}
-                          <div
-                            className="attachment-list composer-attachments"
-                            ref={composerAttachmentsRef}
-                            onScroll={updateComposerAttachmentScrollState}
-                          >
+                        <div className="composer-attachments-wrap">
+                          <div className="attachment-list composer-attachments">
                             {attachments.map((attachment, index) => (
                               <div className="attachment-item is-removable" key={`${attachment.fileName}-${index}`}>
                                 <AttachmentVisual attachment={attachment} file={attachment.file} />
                                 <div className="attachment-copy">
-                                  <strong title={repairMojibakeFileName(attachment.fileName)}>{repairMojibakeFileName(attachment.fileName)}</strong>
+                                  <strong>{repairMojibakeFileName(attachment.fileName)}</strong>
                                   <span>{formatFileSize(attachment.fileSize)}</span>
                                 </div>
                                 <button
                                   className="attachment-remove-button"
                                   aria-label={`删除 ${attachment.fileName}`}
-                                  title="发布前可删除重传"
                                   type="button"
                                   onClick={() => removeAttachment(index)}
                                 >
@@ -1912,17 +2176,6 @@ export function OrderConsole() {
                               </div>
                             ))}
                           </div>
-                          {composerAttachmentScroll.canScrollRight ? (
-                            <button
-                              className="composer-attachment-scroll-button right"
-                              aria-label="向右滚动附件"
-                              title="向右"
-                              type="button"
-                              onClick={() => scrollComposerAttachments("right")}
-                            >
-                              <Icon name="chevron" />
-                            </button>
-                          ) : null}
                         </div>
                       ) : null}
 
@@ -2073,23 +2326,29 @@ export function OrderConsole() {
                   ) : null}
                 </div>
 
-                <PlatformActivityPanel activity={platformActivity} isLoading={isPlatformActivityLoading} isPaused={shouldPausePlatformActivity} />
+                {marketPreview ? null : (
+                  <PlatformActivityPanel activity={platformActivity} isLoading={isPlatformActivityLoading} isPaused={shouldPausePlatformActivity} />
+                )}
               </div>
             </section>
 
-            <section className="case-section studio-cases">
-              <div className="case-grid">
-                {exampleCases.map((item) => (
-                  <article className="case-card" key={item.type}>
-                    <span className="case-icon" aria-hidden="true">
-                      <img src={item.iconSrc} alt="" />
-                    </span>
-                    <h3>{item.title}</h3>
-                    <p>{item.request}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
+            {marketPreview ? (
+              <MarketHomePreviewPanel feed={marketPreview.feed} summary={marketPreview.summary} />
+            ) : (
+              <section className="case-section studio-cases">
+                <div className="case-grid">
+                  {exampleCases.map((item) => (
+                    <article className="case-card" key={item.type}>
+                      <span className="case-icon" aria-hidden="true">
+                        <img src={item.iconSrc} alt="" />
+                      </span>
+                      <h3>{item.title}</h3>
+                      <p>{item.request}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         ) : (
           <section className="detail-stage">
@@ -2100,20 +2359,21 @@ export function OrderConsole() {
                   </div>
                 ) : selectedTask ? (
                   <div className="detail-stack">
-                    <div className="detail-floating-bar">
-                      {lastRefreshAt ? <span className="detail-refresh-meta">上次刷新 {lastRefreshAt}</span> : null}
-                      <button
-                        className="detail-refresh-button"
-                        aria-label="刷新"
-                        data-tooltip="同步全部"
-                        title="同步全部任务"
-                        type="button"
-                        onClick={() => syncHeartbeat()}
-                        disabled={isDetailLoading || isSyncing}
-                      >
-                        <Icon name="activity" />
-                      </button>
-                    </div>
+                    {isSyncableTaskStatus(selectedTask.status) ? (
+                      <div className="detail-floating-bar">
+                        {lastRefreshAt ? <span className="detail-refresh-meta">上次刷新 {lastRefreshAt}</span> : null}
+                        <button
+                          className="detail-refresh-button"
+                          aria-label="刷新"
+                          data-tooltip="刷新任务"
+                          type="button"
+                          onClick={() => syncHeartbeat()}
+                          disabled={isDetailLoading || isSyncing}
+                        >
+                          <Icon name="activity" />
+                        </button>
+                      </div>
+                    ) : null}
 
                     <div className="detail-card task-detail-card">
                       <div className="section-eyebrow">任务详情</div>
@@ -2150,6 +2410,13 @@ export function OrderConsole() {
                         ) : null}
                       </div>
 
+                      {selectedTaskReminder ? (
+                        <div className={`selection-reminder ${selectedTaskReminder.tone}`} role="status">
+                          <strong>{selectedTaskReminder.title}</strong>
+                          <p>{selectedTaskReminder.body}</p>
+                        </div>
+                      ) : null}
+
                       {selectedTask.attachments?.length ? (
                         <div className="task-attachment-section">
                           <div className="attachment-list compact-list">
@@ -2159,7 +2426,6 @@ export function OrderConsole() {
                                 key={`${attachment.fileUrl}-${index}`}
                                 role="button"
                                 tabIndex={0}
-                                title="点击预览"
                                 onClick={() => openAttachmentPreview(attachment, getAttachmentOriginalName(attachment, index))}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter" || event.key === " ") {
@@ -2170,14 +2436,13 @@ export function OrderConsole() {
                               >
                                 <AttachmentVisual attachment={attachment} />
                                 <div className="attachment-copy">
-                                  <strong title={getAttachmentOriginalName(attachment, index)}>{getAttachmentOriginalName(attachment, index)}</strong>
+                                  <strong>{getAttachmentOriginalName(attachment, index)}</strong>
                                   {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
                                 </div>
                                 <div className="attachment-actions">
                                   <button
                                     className="attachment-download-button"
                                     aria-label={`下载 ${getAttachmentOriginalName(attachment, index)}`}
-                                    title="下载"
                                     type="button"
                                     onClick={(event) => {
                                       event.stopPropagation();
@@ -2235,7 +2500,6 @@ export function OrderConsole() {
                                     key={`${attachment.fileUrl}-${index}`}
                                     role="button"
                                     tabIndex={0}
-                                    title="点击预览"
                                     onClick={() => openAttachmentPreview(attachment)}
                                     onKeyDown={(event) => {
                                       if (event.key === "Enter" || event.key === " ") {
@@ -2246,14 +2510,13 @@ export function OrderConsole() {
                                   >
                                     <AttachmentVisual attachment={attachment} />
                                     <div className="attachment-copy">
-                                      <strong title={getAttachmentOriginalName(attachment, index)}>{getAttachmentOriginalName(attachment, index)}</strong>
+                                      <strong>{getAttachmentOriginalName(attachment, index)}</strong>
                                       {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
                                     </div>
                                     <div className="attachment-actions">
                                       <button
                                         className="attachment-download-button"
                                         aria-label={`下载 ${getAttachmentOriginalName(attachment, index)}`}
-                                        title="下载"
                                         type="button"
                                         onClick={(event) => {
                                           event.stopPropagation();
@@ -2294,6 +2557,89 @@ export function OrderConsole() {
             </section>
         )}
       </section>
+      {marketPreview && !selectedTaskId && isCompactComposerVisible ? (
+        <form
+          ref={compactComposerFormRef}
+          className="compact-publish-bar"
+          onSubmit={(event) => {
+            event.preventDefault();
+            focusHomeComposer();
+          }}
+          onFocusCapture={(event) => {
+            if ((event.target as HTMLElement).closest('.compact-attachment-control, input[type="file"]')) {
+              return;
+            }
+            focusHomeComposer();
+          }}
+          onMouseDownCapture={(event) => {
+            if ((event.target as HTMLElement).closest('.compact-attachment-control, input[type="file"]')) {
+              return;
+            }
+            event.preventDefault();
+            focusHomeComposer();
+          }}
+          noValidate
+        >
+          <label
+            className="compact-attachment-control"
+            htmlFor="compact-attachments"
+            aria-label="上传附件"
+            onClick={(event) => {
+              if (!isPhoneLoggedIn) {
+                event.preventDefault();
+                setError(null);
+                setMessage(null);
+                setIsLoginOpen(true);
+              }
+            }}
+          >
+            <Icon name="attachment" />
+            <input
+              id="compact-attachments"
+              multiple
+              type="file"
+              disabled={isCreating}
+              onClick={(event) => {
+                if (!isPhoneLoggedIn) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setError(null);
+                  setMessage(null);
+                  setIsLoginOpen(true);
+                }
+              }}
+              onChange={(event) => {
+                const input = event.currentTarget;
+                if (!isPhoneLoggedIn) {
+                  input.value = "";
+                  input.blur();
+                  setError(null);
+                  setMessage(null);
+                  setIsLoginOpen(true);
+                  return;
+                }
+                addAttachments(input.files);
+                input.value = "";
+                input.blur();
+                focusHomeComposer();
+              }}
+            />
+          </label>
+          <textarea
+            ref={compactDescriptionTextareaRef}
+            aria-label="快速发布任务说明"
+            value={description}
+            placeholder={usesShortCompactPrompt ? "点击立即开始..." : "也想发一个需求任务？点击立即开始..."}
+            readOnly
+            disabled={isCreating}
+            onFocus={() => setIsComposerFocused(true)}
+            onBlur={() => setIsComposerFocused(false)}
+          />
+          <button className="compact-publish-button" type="submit" disabled={isPublishDisabled}>
+            {isCreating ? "发布中" : "发布任务 →"}
+          </button>
+        </form>
+      ) : null}
     </main>
   );
 }

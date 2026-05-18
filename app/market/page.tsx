@@ -3,7 +3,7 @@ import { getMarketActivitySummary, getMarketFeed, syncMarketActivityIfStale } fr
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function MarketPage() {
   await syncMarketActivityIfStale();
   const [summary, feed] = await Promise.all([getMarketActivitySummary(), getMarketFeed({ pageSize: 48 })]);
 
