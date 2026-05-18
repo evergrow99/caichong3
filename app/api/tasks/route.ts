@@ -34,14 +34,14 @@ async function refreshUserOrders(localOrders: Awaited<ReturnType<typeof listByUs
 
     try {
       const latestTask = await taskService.service.getTask(order.caichongTaskId);
-      await updateFromCaichongTask(order.id, latestTask);
+      const syncedTask = (await updateFromCaichongTask(order.id, latestTask)) || latestTask;
       refreshedOrders.push({
         ...order,
-        status: latestTask.status || order.status,
-        paymentUrl: latestTask.paymentUrl || order.paymentUrl,
-        deadlineAt: latestTask.deadlineAt || order.deadlineAt,
-        closeReason: latestTask.closeReason,
-        submissionCount: latestTask.submissionCount || 0
+        status: syncedTask.status || order.status,
+        paymentUrl: syncedTask.paymentUrl || order.paymentUrl,
+        deadlineAt: syncedTask.deadlineAt || order.deadlineAt,
+        closeReason: syncedTask.closeReason,
+        submissionCount: syncedTask.submissionCount || 0
       });
     } catch {
       refreshedOrders.push(order);

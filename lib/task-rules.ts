@@ -1,5 +1,7 @@
 import type { PublishTask } from "@/lib/caichong";
 
+export const selectionWindowMs = 24 * 60 * 60 * 1000;
+
 export const taskStatusLabels: Record<string, string> = {
   PENDING_PAYMENT: "待支付",
   ACTIVE: "提交期",
@@ -37,7 +39,7 @@ export const taskStatusRules = [
     userMeaning: "提交期已结束并进入 24 小时选择期；用户应尽快采用投稿。",
     timeRule: "选择期 24 小时，超时未采用会关闭并退款。",
     userAction: "阅读投稿并采用一份。",
-    systemAction: "继续同步状态和已收到的投稿详情；选择期超时关闭。",
+    systemAction: "继续同步状态和已收到的投稿详情；平台代理短信只到运营侧，后台需要兜底提醒用户；选择期超时关闭。",
     canSelectSubmission: true,
     canReceiveSubmission: false,
     isTerminal: false
@@ -77,6 +79,52 @@ export function getTaskStatusRule(status?: string) {
 
 export function isSyncableTaskStatus(status?: string) {
   return status === "PENDING_PAYMENT" || status === "ACTIVE" || status === "PENDING_SELECTION";
+}
+
+export function getDerivedTaskLifecycle(
+  task: Pick<PublishTask, "status" | "deadlineAt" | "submissionCount" | "closeReason">,
+  now = new Date()
+): Partial<Pick<PublishTask, "status" | "deadlineAt" | "closeReason">> | null {
+  if (!task.deadlineAt || (task.status !== "ACTIVE" && task.status !== "PENDING_SELECTION")) {
+    return null;
+  }
+
+  const deadline = new Date(task.deadlineAt);
+  if (Number.isNaN(deadline.getTime()) || deadline.getTime() > now.getTime()) {
+    return null;
+  }
+
+  if (task.status === "ACTIVE") {
+    if ((task.submissionCount || 0) > 0) {
+      const selectionDeadline = new Date(deadline.getTime() + selectionWindowMs).toISOString();
+
+      if (new Date(selectionDeadline).getTime() <= now.getTime()) {
+        return {
+          status: "CLOSED",
+          deadlineAt: selectionDeadline,
+          closeReason: task.closeReason || "TIMEOUT_NO_SELECTION"
+        };
+      }
+
+      return {
+        status: "PENDING_SELECTION",
+        deadlineAt: selectionDeadline,
+        closeReason: undefined
+      };
+    }
+
+    return {
+      status: "CLOSED",
+      deadlineAt: task.deadlineAt,
+      closeReason: task.closeReason || "TIMEOUT_NO_SUBMISSION"
+    };
+  }
+
+  return {
+    status: "CLOSED",
+    deadlineAt: task.deadlineAt,
+    closeReason: task.closeReason || "TIMEOUT_NO_SELECTION"
+  };
 }
 
 export function canSelectSubmission(task: Pick<PublishTask, "status">) {

@@ -113,9 +113,9 @@ async function refreshOrders(orders: Awaited<ReturnType<typeof listByUser>>, tas
     }
 
     const latestTask = await taskService.service.getTask(order.caichongTaskId);
-    await updateFromCaichongTask(order.id, latestTask);
+    const syncedTask = (await updateFromCaichongTask(order.id, latestTask)) || latestTask;
 
-    if ((latestTask.submissionCount || 0) > 0) {
+    if ((syncedTask.submissionCount || 0) > 0) {
       try {
         const submissionData = await taskService.service.getSubmissions(order.caichongTaskId);
         const submissions = normalizeSubmissions(submissionData);
@@ -137,8 +137,8 @@ async function refreshOrders(orders: Awaited<ReturnType<typeof listByUser>>, tas
       }
     }
 
-    if (latestTask.status !== order.status) {
-      messages.push(`任务 ${order.caichongTaskId} 状态已更新：${order.status} -> ${latestTask.status}`);
+    if (syncedTask.status !== order.status) {
+      messages.push(`任务 ${order.caichongTaskId} 状态已更新：${order.status} -> ${syncedTask.status}`);
     }
   }
 

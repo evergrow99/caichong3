@@ -23,17 +23,18 @@ export async function GET(_request: Request, { params }: RouteContext) {
         try {
           const taskService = await getTaskService(user);
           const remoteTask = await taskService.service.getTask(taskId);
+          let syncedTask = remoteTask;
           try {
-            await updateFromCaichongTask(localOrder.id, remoteTask);
+            syncedTask = (await updateFromCaichongTask(localOrder.id, remoteTask)) || remoteTask;
           } catch {
             // Keep the detail page useful even when the local cache update is temporarily unavailable.
           }
 
           return NextResponse.json({
             ...localTask,
-            ...remoteTask,
+            ...syncedTask,
             description: localTask.description,
-            paymentUrl: localTask.paymentUrl || remoteTask.paymentUrl
+            paymentUrl: localTask.paymentUrl || syncedTask.paymentUrl
           });
         } catch {
           return NextResponse.json(localTask);

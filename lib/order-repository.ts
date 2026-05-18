@@ -2,6 +2,7 @@ import type { Attachment, PublishTask, Submission } from "@/lib/caichong";
 import type { CaichongAccount, PublishMode } from "@/lib/caichong-account";
 import type { CurrentUser } from "@/lib/current-user";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase/server";
+import { getDerivedTaskLifecycle } from "@/lib/task-rules";
 
 export type LocalOrder = {
   id: string;
@@ -56,7 +57,7 @@ export type OrderRepository = {
   findByUserAndTaskId(user: CurrentUser, taskId: string): Promise<LocalOrder | null>;
   findByTaskId(taskId: string): Promise<LocalOrder | null>;
   listSyncableOrders(): Promise<LocalOrder[]>;
-  updateFromCaichongTask(orderId: string, task: PublishTask): Promise<LocalOrder>;
+  updateFromCaichongTask(orderId: string, task: PublishTask): Promise<PublishTask | null>;
   upsertSubmission(input: UpsertSubmissionInput): Promise<void>;
 };
 
@@ -169,6 +170,13 @@ const adminOrderSelect = `
 `;
 
 function mapOrderRow(row: OrderRow): LocalOrder {
+  const lifecyclePatch = getDerivedTaskLifecycle({
+    status: row.status,
+    deadlineAt: row.deadline_at || undefined,
+    submissionCount: row.submission_count || 0,
+    closeReason: row.close_reason || undefined
+  });
+
   return {
     id: row.id,
     userId: row.user_id,
@@ -177,10 +185,10 @@ function mapOrderRow(row: OrderRow): LocalOrder {
     caichongTaskId: row.caichong_task_id,
     description: row.description,
     price: Number(row.price),
-    status: row.status,
+    status: lifecyclePatch?.status || row.status,
     paymentUrl: row.payment_url || undefined,
-    deadlineAt: row.deadline_at || undefined,
-    closeReason: row.close_reason || undefined,
+    deadlineAt: lifecyclePatch?.deadlineAt || row.deadline_at || undefined,
+    closeReason: lifecyclePatch?.closeReason || row.close_reason || undefined,
     submissionCount: row.submission_count || 0,
     selectedSubmissionId: row.selected_submission_id || undefined,
     attachments:
@@ -356,15 +364,28 @@ export async function updateFromCaichongTask(orderId: string, task: PublishTask)
     return null;
   }
 
+  const lifecyclePatch = getDerivedTaskLifecycle({
+    status: task.status || "PENDING_PAYMENT",
+    deadlineAt: task.deadlineAt,
+    submissionCount: task.submissionCount || 0,
+    closeReason: task.closeReason
+  });
+  const nextTask = {
+    ...task,
+    ...lifecyclePatch,
+    status: lifecyclePatch?.status || task.status || "PENDING_PAYMENT",
+    submissionCount: task.submissionCount || 0
+  };
+
   const supabase = createSupabaseServiceClient();
   const { error } = await supabase
     .from("orders")
     .update({
-      status: task.status || "PENDING_PAYMENT",
-      payment_url: task.paymentUrl,
-      deadline_at: task.deadlineAt,
-      close_reason: task.closeReason,
-      submission_count: task.submissionCount || 0,
+      status: nextTask.status,
+      payment_url: nextTask.paymentUrl,
+      deadline_at: nextTask.deadlineAt,
+      close_reason: nextTask.closeReason,
+      submission_count: nextTask.submissionCount,
       updated_at: new Date().toISOString()
     })
     .eq("id", orderId);
@@ -373,7 +394,7 @@ export async function updateFromCaichongTask(orderId: string, task: PublishTask)
     throw new Error(`更新订单失败：${error.message}`);
   }
 
-  return task;
+  return nextTask;
 }
 
 export async function updateOrderPaymentUrl(orderId: string, paymentUrl: string) {
