@@ -1,16 +1,16 @@
 # AICHONG Project Handoff
 
-Last updated: 2026-05-12
+Last updated: 2026-05-18
 
-This document is the starting point for a new Codex thread. Read it together with `DESIGN.md`, `git status`, and the current diff before making changes.
+This document is the first thing to read in a new Codex thread. Also read `DESIGN.md`, then run `git status --short --branch` before editing.
 
-## Current Product
+## Product
 
 AICHONG is a demand-side creative task publishing workspace. Users describe a creative need, attach reference files, pay, receive submissions, preview/download attachments, and choose one submission to complete the order.
 
 The user-facing product should feel like AICHONG owns the relationship. Do not expose Caichong integration wording, API mechanics, or internal sync language in the demand-side flow.
 
-## Visual Direction
+## Visual And UX Rules
 
 - Product mood: calm, capable, dark green-black, restrained futuristic.
 - Green is the primary action and active state.
@@ -20,19 +20,19 @@ The user-facing product should feel like AICHONG owns the relationship. Do not e
 - UI copy should be plain, professional, concise, and understandable to ordinary users.
 - Small text should not be heavy. Tooltips, meta text, helper text, chips, and status copy should generally use lighter weights unless they are primary labels.
 - Validation and tips must use consistent patterns. Do not fix one-off messages in isolation when they belong to a shared class of UI feedback.
+- Avoid native browser `title` tooltips unless explicitly needed; use platform-styled tooltips selectively.
 
-## Confirmed UI And Interaction Rules
+## Confirmed UI Rules
 
-### Task Publisher
+### Publisher
 
 - Requirement text must be at least 10 Chinese characters.
 - Price must be 1-100 RMB.
 - Publishing can be drafted before login; login-gated actions open the login modal.
-- Publisher validation messages should use the same `composer-validation-message` style:
-  - requirement too short
-  - invalid price
-  - too many attachments
-  - attachment too large
+- Publisher validation messages should use the same `composer-validation-message` style.
+- Price tooltip copy:
+  - `平台客单价 1-100 元`
+  - `通常报酬越高，越能收到更多投稿`
 
 ### Attachments
 
@@ -41,33 +41,30 @@ The user-facing product should feel like AICHONG owns the relationship. Do not e
 - Upload tooltip copy:
   - `支持常见图片、文档、音视频等参考附件`
   - `单个附件最大 10MB, 最多 5 个`
-- Price tooltip copy:
-  - `平台客单价 1-100 元`
-  - `通常报酬越高，越能收到更多投稿`
 - Attachment size validation copy: `附件最大不能超过 10MB`
 - Too-many validation copy: `最多上传 5 个附件。如需调整，请先删除已选附件。`
-- Upload tooltip should hide immediately when the upload button is clicked, not after upload succeeds.
+- Upload tooltip should hide immediately when the upload button is clicked.
 - Before publishing, selected attachments can be removed/reselected. Remove button tooltip: `发布前可删除重传`.
 - After publishing, the current UI only supports preview/download. There is no fake post-publish attachment editing flow.
-- Known preview support:
-  - image-like attachments preview in image modal
-  - text-like attachments including `.md`, `.txt`, `.csv`, `.json` preview as text
+- Preview support:
+  - images preview in image modal
+  - text-like files including `.md`, `.txt`, `.csv`, `.json` preview as text
   - unsupported formats show toast: `请下载查看`
 - Attachment rows should show a pointer cursor when clickable.
 - Attachment download button should be vertically centered in the attachment row.
 
-### Modals, Toasts, And Confirmation
+### Modals And Toasts
 
-- Use the shared `AppConfirmDialog` and `AppToast` from `components/app-dialog.tsx`.
+- Use shared `AppConfirmDialog` and `AppToast` from `components/app-dialog.tsx`.
 - Do not use browser-native `window.confirm`.
-- Current submission selection dialog copy:
+- Submission selection dialog copy:
   - title: `确认采用这个投稿吗？`
   - description: `确认后，系统将按此结果进行结算`
   - buttons: `再看看` / `确认采用`
 
 ### Sidebar And Mobile
 
-- Sidebar collapse is a secondary function. It should look like a weak icon control, without an outer circle/background.
+- Sidebar collapse is secondary. It should look like a weak icon control, without an outer circle/background.
 - Mobile top-left menu button should not show total order count.
 - Mobile menu button shows a red dot only when there are unread/new submissions.
 - Task list still shows per-task new submission marks.
@@ -76,8 +73,9 @@ The user-facing product should feel like AICHONG owns the relationship. Do not e
 ### Refresh And Read State
 
 - Detail page refresh button should sync all tasks for the current user, not just the current task.
-- The refresh button now calls `syncHeartbeat()`, which calls `/api/sync/heartbeat`, then reloads the task list and current detail.
+- The refresh button calls `POST /api/sync/heartbeat`, then reloads task list and current detail.
 - Loading a task detail successfully marks that task's known submissions as read.
+- Terminal tasks (`COMPLETED`, `CLOSED`) should not show the refresh button because further Caichong sync is not useful and can be slow.
 
 ## Data And Backend Rules
 
@@ -86,19 +84,15 @@ The user-facing product should feel like AICHONG owns the relationship. Do not e
 - Users log in by phone.
 - `getCurrentUser()` maps phone to a deterministic UUID.
 - `profiles` stores phone and display name.
-- A pending local change adds `profiles.last_login_at`.
-- `ensureUserProfile(user, { markLogin: true })` records login time when the column exists, with fallback if the migration has not run.
+- Admin users are controlled by `ADMIN_PHONES`.
 
 ### Orders
 
 - Users only see and operate their own orders.
-- Admin users are controlled by `ADMIN_PHONES`.
 - Orders are stored locally in Supabase and linked to Caichong `taskId`.
 - Real Caichong task IDs are UUIDs. Legacy/mock tasks are excluded from real-money admin metrics.
 
 ### Task Statuses
-
-Status labels:
 
 - `PENDING_PAYMENT`: `待支付`
 - `ACTIVE`: `提交期`
@@ -108,11 +102,52 @@ Status labels:
 
 Selection is allowed during `ACTIVE` and `PENDING_SELECTION`.
 
-### Heartbeat
+### Local Deadline Fallback
+
+Committed and pushed in `f8ada14 Fix overdue task status fallback`.
+
+- If a task is `ACTIVE` and `deadlineAt` has passed:
+  - with submissions: derive `PENDING_SELECTION` until `deadlineAt + 24h`
+  - with no submissions: derive `CLOSED` with `TIMEOUT_NO_SUBMISSION`
+- If `ACTIVE` had submissions and `deadlineAt + 24h` has passed, derive `CLOSED` with `TIMEOUT_NO_SELECTION`.
+- If `PENDING_SELECTION` deadline has passed, derive `CLOSED` with `TIMEOUT_NO_SELECTION`.
+- This fallback is applied when mapping order rows and when writing refreshed Caichong task data.
+- It does not create second-level timers by itself; it runs when the API, admin, user refresh, or scheduled workflow reads/syncs orders.
+
+## Heartbeat And SMS Reminder Chain
+
+Committed and pushed:
+
+- `1493d34 Add order reminder heartbeat`
+- `5a4d94f Use local task timing for reminder fallback`
+- `d3d51d8 Run order reminder sync every 30 minutes`
+
+Current chain:
 
 - User heartbeat: `POST /api/sync/heartbeat`, current user only.
-- Platform heartbeat: `GET /api/sync/heartbeat` with cron secret, all syncable orders.
-- Heartbeat syncs Caichong events, order status, deadlines, close reasons, submission counts, and submissions.
+- Platform heartbeat: `GET /api/sync/heartbeat` with `CRON_SECRET`, all syncable orders.
+- Reminder heartbeat: `GET /api/sync/order-reminders` with `CRON_SECRET`.
+- Reminder heartbeat first runs platform heartbeat, then runs local/SMS reminder logic.
+- If platform heartbeat fails, reminder logic still runs against local data using local deadline fallback.
+- New submission SMS requires the submission to have been synced from Caichong into local Supabase first.
+- Selection-started and selection-deadline reminders can be calculated from local `deadline_at` and `submission_count` even when Caichong status did not transition.
+- `order_sms_reminders.reminder_key` prevents duplicate SMS sends.
+
+GitHub Actions:
+
+- `.github/workflows/order-reminders.yml` calls `https://www.aichong.top/api/sync/order-reminders` every 30 minutes.
+- It also supports manual `workflow_dispatch`.
+- GitHub repository secret `CRON_SECRET` must exactly match Vercel `CRON_SECRET`.
+- User reported the workflow has a green check after adding the secret.
+
+Vercel:
+
+- Actual production hosting is Vercel, not ECS.
+- The project is on Vercel Hobby. Hobby cron is too limited for 30-minute cadence, so GitHub Actions is used as the external scheduler.
+- Vercel environment variables for order reminder SMS are configured and redeployed.
+- `/api/health/readiness` returned `ready: true` and `order_reminder_sms.ok: true` after redeploy.
+- `/api/sync/order-reminders` returned 200 and `检查 0 条短信提醒，发送 0 条，失败 0 条`.
+- The local `.env.local` may still contain an old `CRON_SECRET`; do not rely on it for manual production sync unless it is updated locally.
 
 ## Admin
 
@@ -127,61 +162,51 @@ Current `/admin` includes:
 - status rules
 - operation logs
 
-Pending local admin change adds:
+Pending/uncommitted local work appears to include:
 
 - user list with phone, registration time, last login time, and order count
 - registered user metric
-- migration `supabase/migrations/0005_profile_last_login.sql`
+- admin login route/components
+- market pages/activity UI
 
-## Deployment
+Treat these as already-started work. Read diffs before editing; do not overwrite them.
 
-Repo remote: `https://github.com/evergrow99/caichong3.git`
+## Current Git State
 
-Current deployed/pushed commit before pending admin changes:
+At handoff, `main` is aligned with `origin/main` at:
 
-- `b12b7c0 Polish attachment and task notification UX`
-
-Deployment appears to be ECS + GitHub + PM2 according to `DEPLOY_ECS.md`:
-
-```bash
-cd /www/caichong3
-git pull origin main
-npm install
-npm run build
-pm2 restart caichong3
+```text
+d3d51d8 Run order reminder sync every 30 minutes
 ```
 
-No SSH config is available in this workspace. Updating GitHub is possible, but updating ECS requires server access.
+Uncommitted local changes at handoff:
 
-## Current Git State At Time Of Writing
-
-Committed and pushed:
-
-- attachment UX and validation polish
-- shared modal/toast component
-- mobile unread dot and global refresh behavior
-- sidebar collapse weakening
-
-Uncommitted local changes:
-
-- `app/admin/page.tsx`
-- `app/api/auth/dev-login/route.ts`
-- `app/api/auth/verify-code/route.ts`
-- `app/globals.css`
-- `lib/user-profile.ts`
-- `supabase/migrations/0005_profile_last_login.sql`
-
-Untracked files unrelated to the admin user-list task, unless the user decides otherwise:
-
-- `DEPLOY_ECS.md`
-- `ecosystem.config.cjs`
-
-Before committing or deploying, re-run:
-
-```bash
-npm run build
-git status --short
+```text
+ M app/admin/page.tsx
+ M app/globals.css
+ M app/page.tsx
+ M components/order-console.tsx
+ M components/static-market-nav.tsx
+ M lib/admin.ts
+ M lib/market-activity.ts
+?? app/admin/login/
+?? app/api/admin/
+?? app/api/platform/market/
+?? app/market/
+?? components/admin-login-form.tsx
+?? components/market-dynamics-client.tsx
+?? public/icons/case-design.svg
+?? public/icons/case-other.svg
 ```
+
+These are not part of the heartbeat/SMS fixes. Do not revert them unless the user explicitly asks.
+
+## Deployment Notes
+
+- GitHub push works after user updated token permissions.
+- Vercel redeploy was done after SMS env vars were configured.
+- If changing env vars in Vercel, redeploy production before testing.
+- If testing cron manually, run GitHub Actions workflow `Order reminder heartbeat` or call the endpoint with the current `CRON_SECRET`.
 
 ## Useful Files To Read First
 
@@ -190,9 +215,9 @@ git status --short
 - `components/order-console.tsx`
 - `components/app-dialog.tsx`
 - `app/admin/page.tsx`
-- `lib/user-profile.ts`
 - `lib/order-repository.ts`
 - `lib/task-rules.ts`
 - `lib/heartbeat-sync.ts`
+- `lib/order-reminders.ts`
+- `.github/workflows/order-reminders.yml`
 - `supabase/migrations/`
-
