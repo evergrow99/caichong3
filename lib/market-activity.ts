@@ -105,6 +105,7 @@ const TOPIC_RULES = [
   { label: "视频脚本", pattern: /视频|脚本|短视频|vlog|分镜|剪辑/ },
   { label: "图文海报", pattern: /海报|图文|主图|封面|配图|图片/ },
   { label: "城市文旅", pattern: /文旅|旅游|城市|攻略|景区|出行/ },
+  { label: "项目策划", pattern: /项目|策划|方案|计划|规划|提案|召集令|招募|运营/ },
   { label: "品牌推广", pattern: /推广|品牌|产品|营销|宣传|卖点/ },
   { label: "声音制作", pattern: /配音|音频|音乐|声音|歌曲|降噪/ }
 ];
@@ -158,10 +159,31 @@ export function getPublicMarketDescription(description: string) {
 
 export function getMarketActivityCategory(description: string): Exclude<MarketActivityCategory, "全部"> {
   const text = description.toLowerCase();
-  if (/文案|文章|脚本|总结|回复|攻略|标题|小红书|公众号|金句|口号/.test(text)) return "文案";
-  if (/音频|配音|声音|音乐|歌曲|降噪|录音/.test(text)) return "声音";
-  if (/视频|剪辑|字幕|vlog|数字人|短片|混剪|分镜/.test(text)) return "视频";
-  if (/图|图片|海报|头像|主图|修图|插画|封面|设计|logo|品牌|视觉|排版|名片/.test(text)) return "图片";
+
+  let copyScore = 0;
+  let imageScore = 0;
+  let audioScore = 0;
+  let videoScore = 0;
+
+  if (/文案|文章|脚本|总结|回复|攻略|标题|小红书|公众号|金句|口号|话术|卖点/.test(text)) copyScore += 4;
+  if (/策划|方案|计划|规划|提案|运营|项目|召集令|招募|商业计划|bp|需求梳理/.test(text)) copyScore += 4;
+  if (/音频|配音|声音|音乐|歌曲|降噪|录音|bgm|配乐/.test(text)) audioScore += 5;
+  if (/视频|剪辑|字幕|vlog|数字人|短片|混剪|分镜|成片|片头|片尾/.test(text)) videoScore += 5;
+  if (/图片|海报|头像|主图|修图|插画|封面|logo|标志|配图|banner|kv|长图|名片|包装|画面|出图/.test(text)) imageScore += 5;
+
+  // “设计 / 品牌 / 视觉”经常出现在策划类需求里，不能单独强行判为图片。
+  if (/设计|品牌|视觉|排版/.test(text)) imageScore += 1;
+  if (/视频脚本|短视频脚本|分镜脚本/.test(text)) copyScore += 3;
+
+  const scores = [
+    ["文案", copyScore],
+    ["声音", audioScore],
+    ["视频", videoScore],
+    ["图片", imageScore]
+  ] as const;
+  const [category, score] = scores.reduce((best, current) => (current[1] > best[1] ? current : best));
+
+  if (score > 0) return category;
   return "文案";
 }
 

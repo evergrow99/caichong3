@@ -630,10 +630,29 @@ function getPublicActivityDescription(description: string) {
 
 function getActivityCategory(description: string) {
   const text = description.toLowerCase();
-  if (/文案|文章|脚本|总结|回复|攻略|标题|小红书|公众号/.test(text)) return "文案";
-  if (/图|图片|海报|logo|头像|主图|修图|设计|插画/.test(text)) return "图片";
-  if (/音频|配音|声音|音乐|歌曲|降噪|录音/.test(text)) return "声音";
-  if (/视频|剪辑|字幕|vlog|数字人|短片|混剪/.test(text)) return "视频";
+
+  let copyScore = 0;
+  let imageScore = 0;
+  let audioScore = 0;
+  let videoScore = 0;
+
+  if (/文案|文章|脚本|总结|回复|攻略|标题|小红书|公众号|金句|口号|话术|卖点/.test(text)) copyScore += 4;
+  if (/策划|方案|计划|规划|提案|运营|项目|召集令|招募|商业计划|bp|需求梳理/.test(text)) copyScore += 4;
+  if (/音频|配音|声音|音乐|歌曲|降噪|录音|bgm|配乐/.test(text)) audioScore += 5;
+  if (/视频|剪辑|字幕|vlog|数字人|短片|混剪|分镜|成片|片头|片尾/.test(text)) videoScore += 5;
+  if (/图片|海报|头像|主图|修图|插画|封面|logo|标志|配图|banner|kv|长图|名片|包装|画面|出图/.test(text)) imageScore += 5;
+  if (/设计|品牌|视觉|排版/.test(text)) imageScore += 1;
+  if (/视频脚本|短视频脚本|分镜脚本/.test(text)) copyScore += 3;
+
+  const scores = [
+    ["文案", copyScore],
+    ["声音", audioScore],
+    ["视频", videoScore],
+    ["图片", imageScore]
+  ] as const;
+  const [category, score] = scores.reduce((best, current) => (current[1] > best[1] ? current : best));
+
+  if (score > 0) return category;
   return "任务";
 }
 
