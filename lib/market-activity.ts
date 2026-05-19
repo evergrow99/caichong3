@@ -1,5 +1,6 @@
 import { createCaichongClient, type ExploreTask } from "@/lib/caichong";
 import { getPlatformCaichongAccount } from "@/lib/caichong-account";
+import { classifyMarketTask, type MarketPrimaryCategory } from "@/lib/market-classification";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase/server";
 
 export type MarketActivityItem = {
@@ -10,7 +11,7 @@ export type MarketActivityItem = {
   createdAt?: string;
 };
 
-export type MarketActivityCategory = "全部" | "文案" | "图片" | "声音" | "视频";
+export type MarketActivityCategory = "全部" | MarketPrimaryCategory;
 
 export type MarketActivitySummary = {
   todayOrderCount: number;
@@ -29,6 +30,8 @@ export type MarketFeedItem = {
   title: string;
   description: string;
   category: Exclude<MarketActivityCategory, "全部">;
+  categoryConfidence: number;
+  topic?: string;
   status: string;
   statusLabel: string;
   createdAt?: string;
@@ -100,15 +103,6 @@ const MARKET_BASELINE_ID = "default";
 const DEFAULT_SYNC_INTERVAL_MINUTES = 30;
 const DEFAULT_MAX_MARKET_PAGES = 10;
 const MARKET_CATEGORIES: MarketActivityCategory[] = ["全部", "文案", "图片", "声音", "视频"];
-const TOPIC_RULES = [
-  { label: "小红书文案", pattern: /小红书|种草|笔记|标题/ },
-  { label: "视频脚本", pattern: /视频|脚本|短视频|vlog|分镜|剪辑/ },
-  { label: "图文海报", pattern: /海报|图文|主图|封面|配图|图片/ },
-  { label: "城市文旅", pattern: /文旅|旅游|城市|攻略|景区|出行/ },
-  { label: "项目策划", pattern: /项目|策划|方案|计划|规划|提案|召集令|招募|运营/ },
-  { label: "品牌推广", pattern: /推广|品牌|产品|营销|宣传|卖点/ },
-  { label: "声音制作", pattern: /配音|音频|音乐|声音|歌曲|降噪/ }
-];
 
 function isMissingTableError(error: { code?: string; message?: string }) {
   return error.code === "42P01" || error.code === "PGRST205" || Boolean(error.message?.includes("Could not find the table"));
@@ -158,33 +152,7 @@ export function getPublicMarketDescription(description: string) {
 }
 
 export function getMarketActivityCategory(description: string): Exclude<MarketActivityCategory, "全部"> {
-  const text = description.toLowerCase();
-
-  let copyScore = 0;
-  let imageScore = 0;
-  let audioScore = 0;
-  let videoScore = 0;
-
-  if (/文案|文章|脚本|总结|回复|攻略|标题|小红书|公众号|金句|口号|话术|卖点/.test(text)) copyScore += 4;
-  if (/策划|方案|计划|规划|提案|运营|项目|召集令|招募|商业计划|bp|需求梳理/.test(text)) copyScore += 4;
-  if (/音频|配音|声音|音乐|歌曲|降噪|录音|bgm|配乐/.test(text)) audioScore += 5;
-  if (/视频|剪辑|字幕|vlog|数字人|短片|混剪|分镜|成片|片头|片尾/.test(text)) videoScore += 5;
-  if (/图片|海报|头像|主图|修图|插画|封面|logo|标志|配图|banner|kv|长图|名片|包装|画面|出图/.test(text)) imageScore += 5;
-
-  // “设计 / 品牌 / 视觉”经常出现在策划类需求里，不能单独强行判为图片。
-  if (/设计|品牌|视觉|排版/.test(text)) imageScore += 1;
-  if (/视频脚本|短视频脚本|分镜脚本/.test(text)) copyScore += 3;
-
-  const scores = [
-    ["文案", copyScore],
-    ["声音", audioScore],
-    ["视频", videoScore],
-    ["图片", imageScore]
-  ] as const;
-  const [category, score] = scores.reduce((best, current) => (current[1] > best[1] ? current : best));
-
-  if (score > 0) return category;
-  return "文案";
+  return classifyMarketTask(description).category;
 }
 
 function getMarketTaskTitle(description: string) {
@@ -581,13 +549,15 @@ function sumRows(rows: { total_price: number | string }[]) {
 
 function mapObservedTaskToMarketItem(task: MarketObservedTaskRow): MarketFeedItem {
   const description = getPublicMarketDescription(task.description);
-  const category = getMarketActivityCategory(description);
+  const classification = classifyMarketTask(description);
 
   return {
     taskId: task.task_id,
     title: getMarketTaskTitle(description),
     description,
-    category,
+    category: classification.category,
+    categoryConfidence: classification.confidence,
+    topic: classification.topic,
     status: task.status,
     statusLabel: getMarketStatusLabel(task.status),
     createdAt: task.activity_at
@@ -606,7 +576,7 @@ export async function getMarketFeed({
   if (!hasSupabaseServiceConfig()) {
     return {
       items: [],
-      categories: MARKET_CATEGORIES.map((key) => ({ key, label: key, count: 0 })),
+      categories: MARKET_CATEGORIES.map((key) => ({ key, label: key === "全部" ? "发现" : key, count: 0 })),
       topics: [],
       page,
       pageSize,
@@ -626,7 +596,7 @@ export async function getMarketFeed({
     if (isMissingTableError(error)) {
       return {
         items: [],
-        categories: MARKET_CATEGORIES.map((key) => ({ key, label: key, count: 0 })),
+        categories: MARKET_CATEGORIES.map((key) => ({ key, label: key === "全部" ? "发现" : key, count: 0 })),
         topics: [],
         page,
         pageSize,
@@ -650,11 +620,14 @@ export async function getMarketFeed({
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / safePageSize));
   const safePage = Math.min(totalPages, Math.max(1, Number.isFinite(page) ? page : 1));
   const start = (safePage - 1) * safePageSize;
-  const topics = TOPIC_RULES.map((topic) => ({
-    label: topic.label,
-    count: items.filter((item) => topic.pattern.test(item.description)).length
-  }))
-    .filter((topic) => topic.count > 0)
+  const topicCounts = new Map<string, number>();
+  for (const item of items) {
+    if (item.topic) {
+      topicCounts.set(item.topic, (topicCounts.get(item.topic) || 0) + 1);
+    }
+  }
+  const topics = Array.from(topicCounts.entries())
+    .map(([label, count]) => ({ label, count }))
     .sort((left, right) => right.count - left.count)
     .slice(0, 6);
 
@@ -662,7 +635,7 @@ export async function getMarketFeed({
     items: filteredItems.slice(start, start + safePageSize),
     categories: MARKET_CATEGORIES.map((key) => ({
       key,
-      label: key,
+      label: key === "全部" ? "发现" : key,
       count: categoryCounts.get(key) || 0
     })),
     topics,
