@@ -17,6 +17,7 @@
 本轮重点验证：
 
 - 生产部署是否包含 `ac7e4e6 Add admin SMS reminder logs`。
+- 发现页 / 市场动态是否包含 `3171435 Filter test tasks from market feed` 的过滤效果。
 - `/admin` 是否能看到“短信提醒记录”模块。
 - 短信提醒记录是否能展示最近记录，至少包含提醒类型、手机号、状态、发送时间、关联订单和失败原因。
 - `/api/health/readiness` 是否 ready，尤其是“订单提醒专用密钥”和“订单短信提醒”。
@@ -29,13 +30,16 @@
 - 远端状态：`main...origin/main`
 - 最新提交：
   - `ac7e4e6 Add admin SMS reminder logs`
+  - `3171435 Filter test tasks from market feed`
   - `619a02a Add dedicated order reminder cron secret`
 
 ## 本轮涉及文件
 
 - `app/api/sync/order-reminders/route.ts`
+- `app/api/platform/market/route.ts`
 - `app/admin/page.tsx`
 - `app/globals.css`
+- `lib/market-activity.ts`
 - `lib/order-reminders.ts`
 - `lib/readiness.ts`
 - `.env.example`
@@ -53,7 +57,11 @@
 - cron-job.org 作为订单短信提醒主调度。
 - GitHub Actions 30 分钟调度保留为兜底。
 
-3. 后台短信提醒记录
+3. 发现页测试数据过滤
+- 发现页 / 市场动态过滤内部测试手机号、短描述任务和明显测试联调任务。
+- 旧表数据不物理删除，读取和后续同步时过滤。
+
+4. 后台短信提醒记录
 - `/admin` 新增“短信提醒记录”。
 - 最近 30 条记录展示提醒类型、用户手机号、发送状态、发送时间、关联订单、投稿 ID、失败原因。
 
@@ -63,6 +71,7 @@
 - 线上 `/api/health/readiness` 是否 ready。
 - 管理员进入线上 `/admin` 后，“上线健康检查”是否正常。
 - 管理员进入线上 `/admin` 后，“短信提醒记录”是否出现，并且数据列可读。
+- 线上 `/api/platform/market?pageSize=20` 不应返回 `太短`、`测试任务`、`测试接单`、`真实接口` 等测试/联调任务。
 - cron-job.org 最近执行历史是否继续为 `Successful 200 OK`。
 - 不带或带错 `Authorization` 调用 `/api/sync/order-reminders` 应返回未授权。
 
