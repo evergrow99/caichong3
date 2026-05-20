@@ -126,27 +126,38 @@ Current chain:
 
 - User heartbeat: `POST /api/sync/heartbeat`, current user only.
 - Platform heartbeat: `GET /api/sync/heartbeat` with `CRON_SECRET`, all syncable orders.
-- Reminder heartbeat: `GET /api/sync/order-reminders` with `CRON_SECRET`.
+- Reminder heartbeat: `GET /api/sync/order-reminders` with `ORDER_REMINDER_CRON_SECRET` or fallback `CRON_SECRET`.
 - Reminder heartbeat first runs platform heartbeat, then runs local/SMS reminder logic.
 - If platform heartbeat fails, reminder logic still runs against local data using local deadline fallback.
 - New submission SMS requires the submission to have been synced from Caichong into local Supabase first.
 - Selection-started and selection-deadline reminders can be calculated from local `deadline_at` and `submission_count` even when Caichong status did not transition.
 - `order_sms_reminders.reminder_key` prevents duplicate SMS sends.
+- 2026-05-19 incident: a submission was in local Supabase at 16:30:49, but SMS sent at 19:18:30 because GitHub Actions scheduled runs had a 3h33m gap (`15:45:19` -> `19:18:19`). GitHub Actions schedule is not reliable enough for user-facing near-real-time SMS.
+
+External Cron recommendation:
+
+- Use `cron-job.org` or equivalent as the primary order reminder scheduler every 5 minutes.
+- Configure `GET https://www.aichong.top/api/sync/order-reminders`.
+- Configure header `Authorization: Bearer <ORDER_REMINDER_CRON_SECRET>`.
+- Enable failure notification.
+- Keep GitHub Actions as a 30-minute fallback only.
+- Do not put the general `CRON_SECRET` into the external Cron service unless there is no dedicated secret configured.
 
 GitHub Actions:
 
 - `.github/workflows/order-reminders.yml` calls `https://www.aichong.top/api/sync/order-reminders` every 30 minutes.
 - It also supports manual `workflow_dispatch`.
 - GitHub repository secret `CRON_SECRET` must exactly match Vercel `CRON_SECRET`.
-- User reported the workflow has a green check after adding the secret.
+- The workflow has run successfully, but schedule intervals have been irregular and should be treated as fallback only.
 
 Vercel:
 
 - Actual production hosting is Vercel, not ECS.
-- The project is on Vercel Hobby. Hobby cron is too limited for 30-minute cadence, so GitHub Actions is used as the external scheduler.
+- The project is on Vercel Hobby. Hobby cron is too limited for 5-minute cadence, so an external HTTP Cron should be used as the primary scheduler.
 - Vercel environment variables for order reminder SMS are configured and redeployed.
 - `/api/health/readiness` returned `ready: true` and `order_reminder_sms.ok: true` after redeploy.
 - `/api/sync/order-reminders` returned 200 and `检查 0 条短信提醒，发送 0 条，失败 0 条`.
+- Add `ORDER_REMINDER_CRON_SECRET` to Vercel before configuring external Cron.
 - The local `.env.local` may still contain an old `CRON_SECRET`; do not rely on it for manual production sync unless it is updated locally.
 
 ## Admin

@@ -14,13 +14,13 @@ function getCronSecret(request: Request) {
 }
 
 function authorizeCron(request: Request) {
-  const cronSecret = process.env.CRON_SECRET;
+  const allowedSecrets = [process.env.ORDER_REMINDER_CRON_SECRET, process.env.CRON_SECRET].filter(Boolean);
 
-  if (!cronSecret) {
-    return NextResponse.json({ error: "Missing CRON_SECRET" }, { status: 500 });
+  if (allowedSecrets.length === 0) {
+    return NextResponse.json({ error: "Missing ORDER_REMINDER_CRON_SECRET or CRON_SECRET" }, { status: 500 });
   }
 
-  if (getCronSecret(request) !== cronSecret) {
+  if (!allowedSecrets.includes(getCronSecret(request) || "")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

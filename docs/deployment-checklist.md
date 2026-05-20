@@ -21,6 +21,7 @@ NEXT_PUBLIC_SUPABASE_URL=<Supabase Project URL>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<Supabase anon public key>
 SUPABASE_SERVICE_ROLE_KEY=<Supabase service_role key>
 CRON_SECRET=<一段只有你知道的随机字符串>
+ORDER_REMINDER_CRON_SECRET=<专门给外部订单提醒 Cron 使用的随机字符串>
 ALLOW_DEV_LOGIN=false
 AUTH_SMS_PROVIDER=<真实短信服务标识，接入后填写>
 ALIYUN_SMS_SUBMISSION_TEMPLATE_CODE=<收到投稿提醒模板 Code>
@@ -83,10 +84,25 @@ supabase/migrations/0009_order_sms_reminders.sql
 
 ```text
 GET /api/sync/order-reminders
-Authorization: Bearer <CRON_SECRET>
+Authorization: Bearer <ORDER_REMINDER_CRON_SECRET>
 ```
 
 这个接口会先同步平台订单状态，再按投稿和选择期节点发送提醒，并用 `order_sms_reminders.reminder_key` 防止重复发送。如果部署在 ECS，`ecosystem.config.cjs` 已包含 `caichong3-order-reminders` 进程。
+
+`/api/sync/order-reminders` 兼容 `CRON_SECRET`，方便 GitHub Actions 兜底；外部 Cron 应优先使用 `ORDER_REMINDER_CRON_SECRET`，不要把通用 `CRON_SECRET` 填到第三方服务。
+
+推荐使用 `cron-job.org` 作为主调度：
+
+```text
+Title: AICHONG order reminders
+URL: https://www.aichong.top/api/sync/order-reminders
+Schedule: Every 5 minutes
+Request method: GET
+Header: Authorization: Bearer <ORDER_REMINDER_CRON_SECRET>
+Failure notification: enabled
+```
+
+GitHub Actions 的 30 分钟工作流可以保留为兜底，但不要再把它当作准实时提醒主链路。
 
 ## 上线前人工确认
 
@@ -97,6 +113,8 @@ Authorization: Bearer <CRON_SECRET>
 - Supabase SQL Editor 已执行 `supabase/migrations/0002_operation_logs.sql`
 - Supabase SQL Editor 已执行 `supabase/migrations/0008_market_activity.sql`
 - Supabase SQL Editor 已执行 `supabase/migrations/0009_order_sms_reminders.sql`
+- Vercel 已配置 `ORDER_REMINDER_CRON_SECRET`
+- 外部 Cron 已配置 5 分钟订单提醒心跳，并开启失败通知
 - 才虫 Agent 已认领
 - 至少跑通过一次真实 1 元测试单
 - 确认 `.env.local` 不提交到仓库

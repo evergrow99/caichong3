@@ -28,6 +28,7 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
   const useMock = process.env.CAICHONG_USE_MOCK === "true" || !hasCaichongApiKey;
   const hasAdminPhones = Boolean(process.env.ADMIN_PHONES?.split(",").map((phone) => phone.trim()).filter(Boolean).length);
   const hasCronSecret = Boolean(process.env.CRON_SECRET);
+  const hasOrderReminderCronSecret = Boolean(process.env.ORDER_REMINDER_CRON_SECRET);
   const devLoginSafe = process.env.NODE_ENV !== "production" || process.env.ALLOW_DEV_LOGIN !== "true";
   const hasOrderReminderSms = Boolean(
     process.env.AUTH_SMS_PROVIDER === "aliyun" &&
@@ -94,6 +95,13 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       ok: hasCronSecret,
       detail: hasCronSecret ? "已配置 CRON_SECRET。" : "未配置 CRON_SECRET，部署后的定时同步不能安全运行。",
       action: "在部署环境配置一段随机 CRON_SECRET。"
+    },
+    {
+      key: "order_reminder_cron_secret",
+      label: "订单提醒专用密钥",
+      ok: hasOrderReminderCronSecret,
+      detail: hasOrderReminderCronSecret ? "已配置 ORDER_REMINDER_CRON_SECRET，可供外部 Cron 单独使用。" : "尚未配置订单提醒专用密钥，外部 Cron 会复用通用 CRON_SECRET。",
+      action: "在部署环境配置一段随机 ORDER_REMINDER_CRON_SECRET，并只把它填到外部 Cron。"
     },
     {
       key: "dev_login",
