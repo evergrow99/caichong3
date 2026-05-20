@@ -5,6 +5,7 @@ import { isAdminUser } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/current-user";
 import { syncPlatformHeartbeat } from "@/lib/heartbeat-sync";
 import { listOperationLogs } from "@/lib/operation-log";
+import { listAdminOrderSmsReminders } from "@/lib/order-reminders";
 import { getReadinessReport } from "@/lib/readiness";
 import { listAdminOrders } from "@/lib/order-repository";
 import { getTaskStatusLabel, taskStatusRules } from "@/lib/task-rules";
@@ -61,6 +62,28 @@ function sortSelectionReminderOrders(left: AdminOrderPreview, right: AdminOrderP
   return leftDeadline - rightDeadline;
 }
 
+function getReminderTypeLabel(type: string) {
+  if (type === "SUBMISSION_RECEIVED") return "新投稿";
+  if (type === "SELECTION_STARTED") return "进入选择期";
+  if (type === "SELECTION_DEADLINE_6H") return "截止提醒";
+  return type;
+}
+
+function getReminderStatusLabel(status: string) {
+  if (status === "SENT") return "已发送";
+  if (status === "FAILED") return "失败";
+  if (status === "PENDING") return "发送中";
+  if (status === "SKIPPED") return "已跳过";
+  return status;
+}
+
+function getReminderStatusClassName(status: string) {
+  if (status === "SENT") return "success";
+  if (status === "FAILED") return "danger-chip";
+  if (status === "PENDING") return "warning-chip";
+  return "";
+}
+
 function formatDate(value?: string) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -92,10 +115,11 @@ export default async function AdminPage() {
     redirect(`/admin/login?reason=${user.authMode === "phone" ? "forbidden" : "login"}`);
   }
 
-  const [{ orders, summary }, users, operationLogs, readiness] = await Promise.all([
+  const [{ orders, summary }, users, operationLogs, smsReminders, readiness] = await Promise.all([
     listAdminOrders(),
     listAdminUsers(),
     listOperationLogs(20),
+    listAdminOrderSmsReminders(30),
     getReadinessReport()
   ]);
   const selectionReminderOrders = orders
@@ -255,6 +279,62 @@ export default async function AdminPage() {
             ))
           ) : (
             <div className="empty-state">当前没有进入选择期的真实订单。</div>
+          )}
+        </div>
+      </section>
+
+      <section className="panel admin-panel admin-sms-panel">
+        <div className="panel-header">
+          <h2>短信提醒记录</h2>
+          <p>查看最近的订单提醒短信，方便排查是否已发送、发送给谁，以及失败原因。</p>
+        </div>
+
+        <div className="admin-table-wrap">
+          {smsReminders.length > 0 ? (
+            <table className="admin-table admin-sms-table">
+              <thead>
+                <tr>
+                  <th>提醒</th>
+                  <th>用户</th>
+                  <th>状态</th>
+                  <th>发送时间</th>
+                  <th>关联订单</th>
+                  <th>错误</th>
+                </tr>
+              </thead>
+              <tbody>
+                {smsReminders.map((reminder) => (
+                  <tr key={reminder.id}>
+                    <td>
+                      <strong>{getReminderTypeLabel(reminder.reminderType)}</strong>
+                      <span>{reminder.messageText}</span>
+                      {reminder.deadlineAt ? <span>截止 {formatDate(reminder.deadlineAt)}</span> : null}
+                    </td>
+                    <td>
+                      <strong>{reminder.userPhone}</strong>
+                      <span>尝试 {reminder.attemptCount} 次</span>
+                    </td>
+                    <td>
+                      <span className={`chip ${getReminderStatusClassName(reminder.status)}`}>
+                        {getReminderStatusLabel(reminder.status)}
+                      </span>
+                    </td>
+                    <td>
+                      <strong>{formatDate(reminder.sentAt || reminder.createdAt)}</strong>
+                      <span>创建 {formatDate(reminder.createdAt)}</span>
+                    </td>
+                    <td>
+                      <strong>{reminder.orderDescription || "-"}</strong>
+                      <span>ID {reminder.caichongTaskId || reminder.orderId}</span>
+                      {reminder.caichongSubmissionId ? <span>投稿 {reminder.caichongSubmissionId}</span> : null}
+                    </td>
+                    <td>{reminder.errorMessage || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="empty-state">暂时没有短信提醒记录。提醒表建好后，新投稿或选择期提醒会自动记录在这里。</div>
           )}
         </div>
       </section>

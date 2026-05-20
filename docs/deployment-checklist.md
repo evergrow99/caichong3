@@ -89,6 +89,8 @@ Authorization: Bearer <ORDER_REMINDER_CRON_SECRET>
 
 这个接口会先同步平台订单状态，再按投稿和选择期节点发送提醒，并用 `order_sms_reminders.reminder_key` 防止重复发送。如果部署在 ECS，`ecosystem.config.cjs` 已包含 `caichong3-order-reminders` 进程。
 
+上线后可在 `/admin` 的“短信提醒记录”查看最近提醒的发送状态、手机号、发送时间、关联订单和失败原因。
+
 `/api/sync/order-reminders` 兼容 `CRON_SECRET`，方便 GitHub Actions 兜底；外部 Cron 应优先使用 `ORDER_REMINDER_CRON_SECRET`，不要把通用 `CRON_SECRET` 填到第三方服务。
 
 推荐使用 `cron-job.org` 作为主调度：

@@ -43,6 +43,46 @@ type ReminderLogRow = {
   updated_at: string;
 };
 
+type AdminReminderOrderInfo = {
+  caichong_task_id: string | null;
+  description: string | null;
+  status: string | null;
+};
+
+type AdminReminderLogRow = ReminderLogRow & {
+  order_id: string;
+  reminder_key: string;
+  reminder_type: ReminderType;
+  caichong_submission_id: string | null;
+  user_phone: string;
+  deadline_at: string | null;
+  message_text: string;
+  sent_at: string | null;
+  error_message: string | null;
+  created_at: string;
+  orders?: AdminReminderOrderInfo | AdminReminderOrderInfo[] | null;
+};
+
+export type AdminOrderSmsReminder = {
+  id: string;
+  orderId: string;
+  reminderKey: string;
+  reminderType: ReminderType;
+  caichongSubmissionId?: string;
+  userPhone: string;
+  deadlineAt?: string;
+  messageText: string;
+  status: ReminderStatus;
+  attemptCount: number;
+  sentAt?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+  caichongTaskId?: string;
+  orderDescription?: string;
+  orderStatus?: string;
+};
+
 type CandidateReminder = {
   order: ReminderOrderRow;
   phone: string;
@@ -248,6 +288,75 @@ function buildCandidateReminders(
   }
 
   return candidates;
+}
+
+function mapAdminReminderLog(row: AdminReminderLogRow): AdminOrderSmsReminder {
+  const orderInfo = Array.isArray(row.orders) ? row.orders[0] : row.orders;
+
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    reminderKey: row.reminder_key,
+    reminderType: row.reminder_type,
+    caichongSubmissionId: row.caichong_submission_id || undefined,
+    userPhone: row.user_phone,
+    deadlineAt: row.deadline_at || undefined,
+    messageText: row.message_text,
+    status: row.status,
+    attemptCount: row.attempt_count || 0,
+    sentAt: row.sent_at || undefined,
+    errorMessage: row.error_message || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    caichongTaskId: orderInfo?.caichong_task_id || undefined,
+    orderDescription: orderInfo?.description || undefined,
+    orderStatus: orderInfo?.status || undefined
+  };
+}
+
+export async function listAdminOrderSmsReminders(limit = 30) {
+  if (!hasSupabaseServiceConfig()) {
+    return [];
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("order_sms_reminders")
+    .select(
+      `
+      id,
+      order_id,
+      reminder_key,
+      reminder_type,
+      caichong_submission_id,
+      user_phone,
+      deadline_at,
+      message_text,
+      status,
+      attempt_count,
+      sent_at,
+      error_message,
+      created_at,
+      updated_at,
+      orders (
+        caichong_task_id,
+        description,
+        status
+      )
+    `
+    )
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    if (error.code === "42P01" || error.message.includes("order_sms_reminders")) {
+      return [];
+    }
+
+    throw new Error(`读取短信提醒记录失败：${error.message}`);
+  }
+
+  return ((data || []) as AdminReminderLogRow[]).map(mapAdminReminderLog);
 }
 
 async function reserveReminder(candidate: CandidateReminder) {

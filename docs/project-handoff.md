@@ -169,6 +169,7 @@ Current `/admin` includes:
 - platform heartbeat trigger
 - readiness checks
 - metrics
+- recent order SMS reminder logs
 - action-needed orders
 - all orders
 - status rules
