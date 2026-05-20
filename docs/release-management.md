@@ -148,6 +148,118 @@ P2 可带观察上线：
 - Supabase operation logs 是否出现高频错误。
 - Vercel 或服务器日志是否出现 5xx、超时、环境变量缺失。
 
+## 上线摘要 2026-05-20 订单短信提醒与后台记录
+
+上线结论：交上线总控复审；当前开发线程建议可带观察上线。
+
+线程名称：
+
+- 订单短信提醒链路与后台短信记录模块。
+
+本轮版本：
+
+- 分支：`main`
+- 当前远端：`main...origin/main`
+- 最新提交：`ac7e4e6 Add admin SMS reminder logs`
+- 相关提交：
+  - `619a02a Add dedicated order reminder cron secret`
+  - `ac7e4e6 Add admin SMS reminder logs`
+
+变更范围：
+
+- 给 `/api/sync/order-reminders` 增加订单提醒专用密钥 `ORDER_REMINDER_CRON_SECRET`，外部 Cron 只需要持有这个专用密钥。
+- 将 5 分钟订单短信提醒主调度迁移到 `cron-job.org`，GitHub Actions 30 分钟调度保留为兜底。
+- 在 `/admin` 新增“短信提醒记录”模块，展示最近 30 条订单提醒短信。
+- 后台健康检查新增订单提醒专用密钥状态；项目交接和部署文档已同步。
+
+改动文件：
+
+- `app/api/sync/order-reminders/route.ts`
+- `app/admin/page.tsx`
+- `app/globals.css`
+- `lib/order-reminders.ts`
+- `lib/readiness.ts`
+- `.env.example`
+- `docs/deployment-checklist.md`
+- `docs/project-handoff.md`
+- `docs/work-plan.md`
+
+新增/修改的接口：
+
+- `GET /api/sync/order-reminders`
+  - 仍支持原 `CRON_SECRET`。
+  - 新增支持 `ORDER_REMINDER_CRON_SECRET`。
+  - 外部 Cron 推荐使用 `Authorization: Bearer <ORDER_REMINDER_CRON_SECRET>`。
+- `/admin`
+  - 新增只读短信提醒记录表格，不新增写操作。
+
+新增/修改的环境变量：
+
+- `ORDER_REMINDER_CRON_SECRET`
+  - 已写入 `.env.example`。
+  - 生产 Vercel 必须配置。
+  - cron-job.org Header 必须使用同一值。
+
+新增/修改的数据表或迁移：
+
+- 依赖既有迁移 `supabase/migrations/0009_order_sms_reminders.sql`。
+- 本轮没有新增新的 migration。
+- 上线总控需确认生产 Supabase 已存在 `order_sms_reminders` 表。
+
+用户可见变化：
+
+- 普通用户侧无新增入口。
+- 订单提醒短信发送仍按原模板执行：
+  - 新投稿提醒。
+  - 进入选择期提醒。
+  - 选择截止前约 6 小时提醒。
+- 管理员登录 `/admin` 后可以查看最近短信提醒的类型、手机号、状态、发送时间、关联订单、投稿 ID 和失败原因。
+
+已完成验证：
+
+- `npm run build` 通过。
+- 本地管理员手机号 `18201500661` 登录 `/admin` 成功。
+- 本地 `/admin` 已渲染“短信提醒记录”模块。
+- 本地已读到历史记录：`2026/05/19 19:18` 的新投稿提醒，状态为“已发送”。
+- cron-job.org 已配置每 5 分钟请求 `https://www.aichong.top/api/sync/order-reminders`。
+- cron-job.org 历史记录显示多次 `Successful 200 OK`，执行时间约为 15:10、15:15、15:20、15:25、15:30、15:35。
+- 生产 readiness 之前已确认订单短信提醒配置为正常；上线总控需在本轮部署后重新确认。
+
+未验证项：
+
+- 本轮未触发新的真实短信发送，避免产生额外短信成本和重复通知。
+- 未新建真实订单来验证“新投稿后 5 分钟内发送”的完整线上闭环。
+- 未在 Vercel 部署完成后重新人工刷新线上 `/admin` 截图确认。
+
+已知风险：
+
+- `cron-job.org` 是外部第三方调度服务，若账号、任务、网络或对方服务异常，5 分钟提醒会延迟；GitHub Actions 30 分钟任务只作为兜底。
+- 短信提醒依赖阿里云短信模板、Supabase service role、才虫订单同步、Vercel 环境变量；任一缺失都会导致提醒跳过或失败。
+- 如果 `ORDER_REMINDER_CRON_SECRET` 泄露，攻击者可触发订单提醒同步接口；接口有短信幂等，但仍可能增加接口调用和日志压力。泄露时应立即更换 Vercel 和 cron-job.org 两处密钥。
+- 历史记录只展示最近 30 条，足够运营排查近期问题，但不是完整审计后台。
+
+是否涉及真实付款/结算/短信：
+
+- 不涉及真实付款、结算、退款。
+- 涉及真实短信链路，但本轮开发验证没有主动发送新短信。
+- 后续线上调度会按真实订单状态自动发送短信。
+
+是否需要上线后观察：
+
+- 需要。
+- 观察 cron-job.org 是否继续每 5 分钟返回 200。
+- 观察 `/admin` 的“短信提醒记录”是否出现重复发送、失败或长时间无记录。
+- 观察 `/api/health/readiness` 是否 ready，尤其是“订单提醒专用密钥”和“订单短信提醒”两项。
+- 观察 Vercel Runtime Logs 是否有 `/api/sync/order-reminders` 5xx、超时、Unauthorized 或短信模板错误。
+
+上线总控复审建议：
+
+- 确认 `git status --short --branch` 为 `main...origin/main` 且无未提交代码改动。
+- 确认 Vercel 最新部署包含 `ac7e4e6`。
+- 确认生产 Vercel 已配置 `ORDER_REMINDER_CRON_SECRET`，并且 cron-job.org Header 使用同一个值。
+- 打开线上 `/admin`，检查上线健康检查和“短信提醒记录”。
+- 先不制造真实新投稿测试；若需要完整闭环测试，需由主人明确同意可能产生短信费用。
+
 ## 当前上线摘要 2026-05-20
 
 上线结论：可带观察上线。
@@ -318,6 +430,97 @@ P2 可带观察上线：
 - 部分历史市场数据 topic 仍有 `$undefined`，属于旧数据清洗问题，不阻断本轮上线。
 - 当前工作区仍有未提交改动，上线前需要提交并确认发布版本包含这些改动。
 - 线上 GitHub Actions 最近一次 30 分钟心跳记录尚未在 GitHub 页面人工确认，上线后需要观察。
+
+## 当前上线摘要 2026-05-20 晚间
+
+上线结论：可上线，建议上线后观察。
+
+本轮版本：
+
+- 分支：`main`
+- 当前状态：`main...origin/main`
+- 最新提交：`ac7e4e6 Add admin SMS reminder logs`
+- 关键相关提交：
+  - `619a02a Add dedicated order reminder cron secret`
+  - `3171435 Filter test tasks from market feed`
+  - `ac7e4e6 Add admin SMS reminder logs`
+
+包含变更：
+
+- 发现页 / 市场动态过滤测试数据：
+  - 过滤内部测试手机号订单，包括 `13900000000`。
+  - 过滤描述少于 10 个字的任务，例如 `太短`。
+  - 过滤明显测试或联调任务，例如 `测试任务`、`测试接单`、`真实接口`、`接口联调`。
+  - 已存在 `market_observed_tasks` 表内的旧测试数据不删除，但发现列表和统计读取时会过滤。
+  - 后续同步时也不会再把这类本地测试单写进发现数据。
+- 订单提醒心跳支持独立密钥：
+  - `/api/sync/order-reminders` 可使用独立的订单提醒 cron secret。
+  - 保留与原 `CRON_SECRET` 的关系，具体以代码和部署文档为准。
+- 管理后台增加短信提醒记录展示：
+  - `/admin` 可查看订单短信提醒日志。
+  - 包含提醒类型、手机号、发送状态、尝试次数、错误信息、关联订单信息等运营排查字段。
+- 文档更新：
+  - `docs/deployment-checklist.md`
+  - `docs/project-handoff.md`
+  - `docs/work-plan.md`
+
+不包含变更：
+
+- 不包含真实付款、采用投稿、结算或退款操作。
+- 不包含数据库表结构新增迁移。
+- 不包含首页布局、发布框或市场卡片的大范围 UI 调整。
+- 当前工作区干净，没有未提交代码需要纳入本轮上线。
+
+必须配置：
+
+- 生产环境不能启用 `ALLOW_DEV_LOGIN=true`。
+- 生产环境不能启用 `CAICHONG_USE_MOCK=true`。
+- 订单提醒心跳密钥需要与 GitHub Actions 或外部调度器配置一致。
+- `CRON_SECRET` 及订单提醒专用 secret 的生产配置需按 `docs/deployment-checklist.md` 核对。
+- `ADMIN_PHONES` 必须包含正式管理员手机号。
+- Supabase service role、才虫 API Key、短信 AK/SK 只能在服务端环境变量中配置。
+
+必须执行迁移：
+
+- 本轮没有新增 migration。
+- 仍需确认生产库已有：
+  - `market_observed_tasks`
+  - `market_activity_state`
+  - `market_activity_baselines`
+  - `order_sms_reminders`
+
+验证结果：
+
+- `npm run build` 通过，时间：2026-05-20。
+- 本地市场接口已验证：
+  - `太短` 不再返回。
+  - 老的 `测试任务` 不再返回。
+  - 发现总数由 11 降到 9。
+- `git status --short --branch` 结果为 `main...origin/main`，工作区干净。
+
+主要风险：
+
+- 市场过滤是读取和同步双层过滤，不会物理删除旧表数据；如果后台直接查表，仍可能看到旧测试行。
+- 发现统计会因过滤测试/短描述任务而下降，这是预期变化。
+- 订单提醒日志属于后台运营视图，需上线后确认真实生产数据量下页面加载正常。
+- 订单提醒独立 cron secret 涉及调度配置，若生产变量或 GitHub Actions secret 不一致，提醒心跳可能返回鉴权失败。
+
+上线后观察指标：
+
+- Vercel 最新构建是否成功。
+- 生产首页发现模块是否不再展示 `太短` 和测试任务。
+- `/api/platform/market?pageSize=20` 是否不返回测试短单。
+- `/admin` 短信提醒记录是否可正常打开。
+- `/api/sync/order-reminders` 是否继续返回 200。
+- GitHub Actions 30 分钟订单提醒心跳是否继续成功。
+- `/api/health/readiness` 是否 ready。
+- Supabase operation logs 是否有市场接口、短信提醒日志、cron 鉴权相关错误。
+
+回滚建议：
+
+- 若仅发现页过滤异常，优先回滚 `3171435`。
+- 若订单提醒 cron 鉴权异常，优先检查生产环境变量和 GitHub Actions secret；必要时回滚 `619a02a`。
+- 若后台短信提醒日志导致 `/admin` 异常，优先回滚 `ac7e4e6`。
 
 上线后观察：
 

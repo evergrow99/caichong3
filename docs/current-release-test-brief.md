@@ -8,6 +8,99 @@
 
 ## 上线摘要名称
 
+2026-05-20 订单短信提醒与后台记录待测版本
+
+## 本轮上线总控摘要
+
+对应 `docs/release-management.md` 的 `上线摘要 2026-05-20 订单短信提醒与后台记录`。
+
+本轮重点验证：
+
+- 生产部署是否包含 `ac7e4e6 Add admin SMS reminder logs`。
+- `/admin` 是否能看到“短信提醒记录”模块。
+- 短信提醒记录是否能展示最近记录，至少包含提醒类型、手机号、状态、发送时间、关联订单和失败原因。
+- `/api/health/readiness` 是否 ready，尤其是“订单提醒专用密钥”和“订单短信提醒”。
+- cron-job.org 是否继续每 5 分钟返回 `200 OK`。
+- 不主动触发真实短信，除非主人明确同意。
+
+## 本轮版本状态
+
+- 分支：`main`
+- 远端状态：`main...origin/main`
+- 最新提交：
+  - `ac7e4e6 Add admin SMS reminder logs`
+  - `619a02a Add dedicated order reminder cron secret`
+
+## 本轮涉及文件
+
+- `app/api/sync/order-reminders/route.ts`
+- `app/admin/page.tsx`
+- `app/globals.css`
+- `lib/order-reminders.ts`
+- `lib/readiness.ts`
+- `.env.example`
+- `docs/deployment-checklist.md`
+- `docs/project-handoff.md`
+- `docs/work-plan.md`
+
+## 本轮主要变更
+
+1. 订单提醒专用密钥
+- `/api/sync/order-reminders` 支持 `ORDER_REMINDER_CRON_SECRET`。
+- 外部 Cron 使用专用密钥，降低通用 `CRON_SECRET` 暴露面。
+
+2. 外部 5 分钟 Cron
+- cron-job.org 作为订单短信提醒主调度。
+- GitHub Actions 30 分钟调度保留为兜底。
+
+3. 后台短信提醒记录
+- `/admin` 新增“短信提醒记录”。
+- 最近 30 条记录展示提醒类型、用户手机号、发送状态、发送时间、关联订单、投稿 ID、失败原因。
+
+## 本轮重点测试路径
+
+- Vercel 最新部署是否成功。
+- 线上 `/api/health/readiness` 是否 ready。
+- 管理员进入线上 `/admin` 后，“上线健康检查”是否正常。
+- 管理员进入线上 `/admin` 后，“短信提醒记录”是否出现，并且数据列可读。
+- cron-job.org 最近执行历史是否继续为 `Successful 200 OK`。
+- 不带或带错 `Authorization` 调用 `/api/sync/order-reminders` 应返回未授权。
+
+## 本轮高风险点
+
+- 真实短信链路会产生短信费用，测试不要随意制造真实提醒。
+- 外部 Cron 依赖 cron-job.org 账号和任务配置，需要上线后持续观察。
+- 如果 `ORDER_REMINDER_CRON_SECRET` 泄露，应同时更换 Vercel 和 cron-job.org 两处密钥。
+
+## 本轮必须执行的验证命令
+
+- `npm run build`
+
+## 本轮测试结论格式
+
+```text
+测试线程名称：
+对应上线摘要：2026-05-20 订单短信提醒与后台记录
+测试环境：
+测试时间：
+
+测试范围：
+通过路径：
+发现的问题：
+已修复的问题：
+仍未验证：
+残留风险：
+是否涉及真实付款/结算/短信：
+是否改动了代码：
+改动文件：
+验证命令和结果：
+是否建议上线：建议上线 / 建议补测后上线 / 建议暂缓上线
+```
+
+---
+
+## 历史上线摘要名称
+
 2026-05-20 上线前待测版本
 
 ## 测试目标
