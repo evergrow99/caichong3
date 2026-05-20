@@ -14,6 +14,7 @@ import {
   upsertSubmission
 } from "@/lib/order-repository";
 import { getTaskService, isUsingMockCaichong } from "@/lib/task-service";
+import { isSyncableTaskStatus } from "@/lib/task-rules";
 
 type SyncResult = {
   source: "mock" | "caichong";
@@ -153,26 +154,29 @@ export async function syncHeartbeat(user: CurrentUser): Promise<SyncResult> {
   let totalPages = 1;
   let checkedEvents = 0;
 
-  while (page <= totalPages) {
-    const data = await taskService.service.listEvents({ page, pageSize: 50 });
-    totalPages = data.totalPages || 1;
-    checkedEvents += data.events.length;
+  if (taskService.account.mode !== "PLATFORM_AGENT") {
+    while (page <= totalPages) {
+      const data = await taskService.service.listEvents({ page, pageSize: 50 });
+      totalPages = data.totalPages || 1;
+      checkedEvents += data.events.length;
 
-    for (const event of data.events) {
-      const eventMessages = await handleEvent(event, taskService, (taskId) => findByUserAndTaskId(user, taskId));
-      messages.push(...eventMessages);
-      ackedEventIds.push(event.id);
+      for (const event of data.events) {
+        const eventMessages = await handleEvent(event, taskService, (taskId) => findByUserAndTaskId(user, taskId));
+        messages.push(...eventMessages);
+        ackedEventIds.push(event.id);
+      }
+
+      page += 1;
     }
 
-    page += 1;
-  }
-
-  if (ackedEventIds.length > 0) {
-    await taskService.service.ackEvents(ackedEventIds);
+    if (ackedEventIds.length > 0) {
+      await taskService.service.ackEvents(ackedEventIds);
+    }
   }
 
   if (taskService.source === "caichong") {
-    const refreshMessages = await refreshOrders(await listByUser(user), taskService);
+    const syncableOrders = (await listByUser(user)).filter((order) => isSyncableTaskStatus(order.status));
+    const refreshMessages = await refreshOrders(syncableOrders, taskService);
     messages.push(...refreshMessages);
   }
 

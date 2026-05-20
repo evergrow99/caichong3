@@ -19,6 +19,7 @@ function toErrorResponse(error: unknown, fallback: string) {
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const refreshableStatuses = new Set(["PENDING_PAYMENT", "ACTIVE", "PENDING_SELECTION"]);
+const MIN_DESCRIPTION_LENGTH = 10;
 
 async function refreshUserOrders(localOrders: Awaited<ReturnType<typeof listByUser>>, taskService: Awaited<ReturnType<typeof getTaskService>>) {
   if (taskService.source !== "caichong") {
@@ -112,8 +113,8 @@ export async function POST(request: Request) {
     const description = String(body.description || "").trim();
     const price = Number(body.price);
 
-    if (!description) {
-      return NextResponse.json({ error: "任务说明不能为空" }, { status: 400 });
+    if (description.length < MIN_DESCRIPTION_LENGTH) {
+      return NextResponse.json({ error: "请输入10个字以上的需求描述" }, { status: 400 });
     }
 
     if (!Number.isFinite(price) || price < 1 || price > 100) {

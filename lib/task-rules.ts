@@ -140,12 +140,9 @@ export function getTaskStep(status?: string) {
 
 export function getEmptySubmissionText(status?: string, expectedCount = 0) {
   if (status === "PENDING_PAYMENT") return "这单还没有付款，所以暂时不会开始处理。";
-  if (status === "ACTIVE" && expectedCount > 0) return "订单显示已有投稿，但暂时没读到详情。请点“刷新”再试。";
-  if (status === "ACTIVE") return "任务已经进入提交期，但还没有收到投稿。可以稍后点“刷新”。";
-  if (status === "PENDING_SELECTION") return "订单已进入选择期，请在选择期结束前采用一份投稿。";
-  if (status === "COMPLETED") return "这单已经完成，当前没有可继续选择的投稿。";
-  if (status === "CLOSED") return "这单已经关闭，当前没有可处理的投稿。";
-  return "这单暂时没有投稿。";
+  if (status === "ACTIVE" && expectedCount > 0) return "订单显示已有投稿，但暂时没有读到详情。请稍后刷新查看。";
+  if (status === "PENDING_SELECTION" && expectedCount > 0) return "暂时没有读到投稿详情，请稍后刷新查看。";
+  return "这里还没有投稿内容。";
 }
 
 export function getCloseReasonLabel(reason?: string) {

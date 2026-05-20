@@ -616,7 +616,7 @@ export async function getMarketFeed({
   }
 
   const filteredItems = category === "全部" ? items : items.filter((item) => item.category === category);
-  const safePageSize = Math.min(48, Math.max(6, Number.isFinite(pageSize) ? pageSize : 18));
+  const safePageSize = Math.min(48, Math.max(1, Number.isFinite(pageSize) ? pageSize : 18));
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / safePageSize));
   const safePage = Math.min(totalPages, Math.max(1, Number.isFinite(page) ? page : 1));
   const start = (safePage - 1) * safePageSize;

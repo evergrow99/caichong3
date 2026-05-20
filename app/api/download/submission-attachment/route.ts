@@ -22,7 +22,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "缺少附件地址" }, { status: 400 });
     }
 
-    const attachmentUrl = new URL(rawUrl);
+    let attachmentUrl: URL;
+    try {
+      attachmentUrl = new URL(rawUrl);
+    } catch {
+      return NextResponse.json({ error: "附件地址格式不正确" }, { status: 400 });
+    }
+
     if (attachmentUrl.protocol !== "https:" || !allowedHosts.has(attachmentUrl.hostname)) {
       return NextResponse.json({ error: "不允许下载这个附件地址" }, { status: 400 });
     }

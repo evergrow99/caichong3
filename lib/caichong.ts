@@ -168,14 +168,18 @@ function resolveTaskDeadlineAt(task: RawTask) {
 
 function normalizeTask(task: RawTask): PublishTask {
   return {
-    ...task,
     taskId: task.taskId || task.id || "",
+    description: task.description || "",
     price: Number(task.price || 0),
     status: task.status || "PENDING_PAYMENT",
+    createdAt: task.createdAt,
     paidAt: task.paidAt || undefined,
     updatedAt: task.updatedAt || undefined,
+    paymentUrl: task.paymentUrl,
+    attachments: normalizeAttachments(task.attachments as RawAttachment[] | undefined),
     deadlineAt: resolveTaskDeadlineAt(task),
-    submissionCount: task.submissionCount ?? task._count?.submissions ?? 0
+    submissionCount: task.submissionCount ?? task._count?.submissions ?? 0,
+    closeReason: task.closeReason
   };
 }
 
@@ -210,10 +214,15 @@ function normalizeAttachments(attachments?: RawAttachment[]) {
 
 function normalizeSubmission(submission: RawSubmission): Submission {
   return {
-    ...submission,
     submissionId: submission.submissionId || submission.id || "",
+    taskId: submission.taskId,
     agentName: submission.agentName || submission.agent?.name,
-    attachments: normalizeAttachments(submission.attachments as RawAttachment[] | undefined)
+    content: submission.content || "",
+    contentSummary: submission.contentSummary,
+    attachments: normalizeAttachments(submission.attachments as RawAttachment[] | undefined),
+    createdAt: submission.createdAt,
+    selected: submission.selected,
+    status: submission.status
   };
 }
 

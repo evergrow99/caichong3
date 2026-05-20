@@ -19,6 +19,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "当前仍是演示模式，附件不会用于真实任务" }, { status: 400 });
     }
 
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("multipart/form-data")) {
+      return NextResponse.json({ error: "请选择要上传的文件" }, { status: 400 });
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
 
@@ -31,7 +36,7 @@ export async function POST(request: Request) {
     }
 
     if (file.size > MAX_ATTACHMENT_SIZE) {
-      return NextResponse.json({ error: "单个附件不能超过 10MB" }, { status: 400 });
+      return NextResponse.json({ error: "附件最大不能超过 10MB" }, { status: 400 });
     }
 
     const attachment = await uploadTaskAttachment(file, {
