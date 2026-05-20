@@ -6913,6 +6913,10 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.studio-shell.visitor-active .home-market-stats {
+  right: clamp(132px, 12vw, 168px);
+}
+
 .home-market-stat {
   display: inline-flex;
   align-items: center;

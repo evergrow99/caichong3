@@ -2009,7 +2009,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     <main
       className={`studio-shell ${!selectedTaskId ? "home-active" : "detail-active"} ${
         marketPreview ? "market-preview-active" : ""
-      } ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}
+      } ${!isAuthLoading && !isPhoneLoggedIn ? "visitor-active" : ""} ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}
     >
       <button
         aria-label="打开菜单"
