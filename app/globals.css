@@ -6925,7 +6925,10 @@ textarea:focus-visible {
 }
 
 .studio-shell.visitor-active .home-market-stats {
+  top: clamp(8px, calc(2vw - 6px), 18px);
   right: clamp(142px, 14vw, 172px);
+  min-height: 32px;
+  align-items: center;
 }
 
 .home-market-stat {
