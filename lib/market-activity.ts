@@ -78,12 +78,19 @@ type MarketObservedTaskUpsertRow = {
 };
 
 type LocalPublishedOrderRow = {
+  user_id: string;
   caichong_task_id: string;
   description: string;
   price: number | string;
   status: string;
   submission_count: number | null;
   created_at: string | null;
+};
+
+type MarketProfileRow = {
+  id: string;
+  phone: string | null;
+  display_name: string | null;
 };
 
 type MarketBaselineRow = {
@@ -103,6 +110,9 @@ const MARKET_BASELINE_ID = "default";
 const DEFAULT_SYNC_INTERVAL_MINUTES = 30;
 const DEFAULT_MAX_MARKET_PAGES = 10;
 const MARKET_CATEGORIES: MarketActivityCategory[] = ["全部", "文案", "图片", "声音", "视频"];
+const MIN_PUBLIC_MARKET_DESCRIPTION_LENGTH = 10;
+const INTERNAL_TEST_PHONES = new Set(["10000000000", "1111111111", "11111111111", "12222222222", "13700000000", "13800000000", "13900000000"]);
+const INTERNAL_TEST_USER_IDS = new Set(["00000000-0000-4000-8000-000000000001"]);
 
 function isMissingTableError(error: { code?: string; message?: string }) {
   return error.code === "42P01" || error.code === "PGRST205" || Boolean(error.message?.includes("Could not find the table"));
@@ -131,6 +141,21 @@ function getMarketApiKey() {
 
 function getTaskAmount(task: ExploreTask) {
   return Number(task.totalPrice || task.price || 0);
+}
+
+function isPublicMarketDescription(description?: string | null) {
+  const normalized = description?.trim();
+  if (!normalized || normalized.length < MIN_PUBLIC_MARKET_DESCRIPTION_LENGTH) return false;
+  if (/测试任务|测试接单|真实接口|接口联调|联调使用|小额测试任务/.test(normalized)) return false;
+  return true;
+}
+
+function isInternalTestProfile(profile: Pick<MarketProfileRow, "id" | "phone" | "display_name">) {
+  return (
+    INTERNAL_TEST_USER_IDS.has(profile.id) ||
+    Boolean(profile.phone && INTERNAL_TEST_PHONES.has(profile.phone)) ||
+    profile.display_name === "演示用户"
+  );
 }
 
 export function getPublicMarketDescription(description: string) {
@@ -232,7 +257,7 @@ async function listCaichongMarketTasks() {
 
 function mapExploreTasksToRows(tasks: ExploreTask[], nowIso: string): MarketObservedTaskUpsertRow[] {
   return tasks
-    .filter((task) => task.taskId && task.description)
+    .filter((task) => task.taskId && isPublicMarketDescription(task.description))
     .map((task) => {
       const caichongCreatedAt = toIsoDate(task.createdAt);
       const activityAt = caichongCreatedAt || nowIso;
@@ -260,7 +285,7 @@ function mapExploreTasksToRows(tasks: ExploreTask[], nowIso: string): MarketObse
 
 function mapLocalOrdersToRows(orders: LocalPublishedOrderRow[], nowIso: string): MarketObservedTaskUpsertRow[] {
   return orders
-    .filter((order) => order.caichong_task_id && order.description)
+    .filter((order) => order.caichong_task_id && isPublicMarketDescription(order.description))
     .map((order) => {
       const caichongCreatedAt = toIsoDate(order.created_at || undefined);
       const activityAt = caichongCreatedAt || nowIso;
@@ -304,11 +329,35 @@ async function upsertObservedRows(rows: MarketObservedTaskUpsertRow[]) {
   return { ok: true as const };
 }
 
+async function listInternalTestUserIds(userIds: string[]) {
+  const internalUserIds = new Set(userIds.filter((userId) => INTERNAL_TEST_USER_IDS.has(userId)));
+  if (userIds.length === 0) return internalUserIds;
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase.from("profiles").select("id, phone, display_name").in("id", userIds);
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      return internalUserIds;
+    }
+
+    throw new Error(`读取本地测试用户失败：${error.message}`);
+  }
+
+  for (const profile of (data || []) as MarketProfileRow[]) {
+    if (isInternalTestProfile(profile)) {
+      internalUserIds.add(profile.id);
+    }
+  }
+
+  return internalUserIds;
+}
+
 async function syncLocalPublishedOrders(nowIso: string) {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("orders")
-    .select("caichong_task_id, description, price, status, submission_count, created_at")
+    .select("user_id, caichong_task_id, description, price, status, submission_count, created_at")
     .neq("status", "PENDING_PAYMENT")
     .limit(5000);
 
@@ -320,7 +369,9 @@ async function syncLocalPublishedOrders(nowIso: string) {
     throw new Error(`读取本地发布订单失败：${error.message}`);
   }
 
-  const rows = mapLocalOrdersToRows((data || []) as LocalPublishedOrderRow[], nowIso);
+  const orders = (data || []) as LocalPublishedOrderRow[];
+  const internalUserIds = await listInternalTestUserIds(Array.from(new Set(orders.map((order) => order.user_id).filter(Boolean))));
+  const rows = mapLocalOrdersToRows(orders.filter((order) => !internalUserIds.has(order.user_id)), nowIso);
   const upsertResult = await upsertObservedRows(rows);
 
   if (!upsertResult.ok) {
@@ -608,7 +659,7 @@ export async function getMarketFeed({
     throw new Error(`读取市场动态任务失败：${error.message}`);
   }
 
-  const items = ((data || []) as MarketObservedTaskRow[]).map(mapObservedTaskToMarketItem);
+  const items = ((data || []) as MarketObservedTaskRow[]).filter((task) => isPublicMarketDescription(task.description)).map(mapObservedTaskToMarketItem);
   const categoryCounts = new Map<MarketActivityCategory, number>(MARKET_CATEGORIES.map((key) => [key, key === "全部" ? items.length : 0]));
 
   for (const item of items) {
@@ -656,29 +707,28 @@ export async function getMarketActivitySummary(): Promise<MarketActivitySummary>
   const baseline = await getBaseline();
   const lastSyncedAt = await getLastSyncedAt();
 
-  const [todayRowsResult, monthRowsResult, totalCountResult, totalRowsResult, recentResult] = await Promise.all([
+  const [todayRowsResult, monthRowsResult, totalRowsResult, recentResult] = await Promise.all([
     supabase
       .from("market_observed_tasks")
-      .select("total_price")
+      .select("description, total_price")
       .gte("activity_at", todayStart)
       .lt("activity_at", tomorrowStart)
       .limit(5000),
     supabase
       .from("market_observed_tasks")
-      .select("total_price")
+      .select("description, total_price")
       .gte("activity_at", monthStart)
       .lt("activity_at", nextMonthStart)
       .limit(5000),
-    supabase.from("market_observed_tasks").select("task_id", { count: "exact", head: true }),
-    supabase.from("market_observed_tasks").select("total_price").limit(5000),
+    supabase.from("market_observed_tasks").select("description, total_price").limit(5000),
     supabase
       .from("market_observed_tasks")
       .select("task_id, description, total_price, status, activity_at")
       .order("activity_at", { ascending: false })
-      .limit(5)
+      .limit(20)
   ]);
 
-  for (const result of [todayRowsResult, monthRowsResult, totalCountResult, totalRowsResult, recentResult]) {
+  for (const result of [todayRowsResult, monthRowsResult, totalRowsResult, recentResult]) {
     if (result.error) {
       if (isMissingTableError(result.error)) {
         return emptySummary();
@@ -688,21 +738,30 @@ export async function getMarketActivitySummary(): Promise<MarketActivitySummary>
     }
   }
 
-  const recentOrders = ((recentResult.data || []) as MarketObservedTaskRow[]).map((task) => ({
+  const todayRows = ((todayRowsResult.data || []) as { description: string; total_price: number | string }[]).filter((row) =>
+    isPublicMarketDescription(row.description)
+  );
+  const monthRows = ((monthRowsResult.data || []) as { description: string; total_price: number | string }[]).filter((row) =>
+    isPublicMarketDescription(row.description)
+  );
+  const totalRows = ((totalRowsResult.data || []) as { description: string; total_price: number | string }[]).filter((row) =>
+    isPublicMarketDescription(row.description)
+  );
+  const recentOrders = ((recentResult.data || []) as MarketObservedTaskRow[]).filter((task) => isPublicMarketDescription(task.description)).map((task) => ({
     taskId: task.task_id,
     description: task.description,
     price: Number(task.total_price || task.price || 0),
     status: task.status,
     createdAt: task.activity_at
-  }));
+  })).slice(0, 5);
 
   return {
-    todayOrderCount: todayRowsResult.data?.length || 0,
-    monthOrderCount: baseline.monthTaskCountBase + (monthRowsResult.data?.length || 0),
-    totalOrderCount: baseline.taskCountBase + (totalCountResult.count || 0),
-    todayOrderAmount: sumRows((todayRowsResult.data || []) as { total_price: number | string }[]),
-    monthOrderAmount: baseline.monthAmountBase + sumRows((monthRowsResult.data || []) as { total_price: number | string }[]),
-    totalOrderAmount: baseline.amountBase + sumRows((totalRowsResult.data || []) as { total_price: number | string }[]),
+    todayOrderCount: todayRows.length,
+    monthOrderCount: baseline.monthTaskCountBase + monthRows.length,
+    totalOrderCount: baseline.taskCountBase + totalRows.length,
+    todayOrderAmount: sumRows(todayRows),
+    monthOrderAmount: baseline.monthAmountBase + sumRows(monthRows),
+    totalOrderAmount: baseline.amountBase + sumRows(totalRows),
     recentOrders,
     lastSyncedAt,
     source: "caichong_observed"
