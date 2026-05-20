@@ -2943,9 +2943,9 @@ textarea:focus-visible {
 .studio-shell.home-active.visitor-active .studio-login-button {
   top: clamp(8px, calc(2vw - 6px), 18px);
   right: clamp(18px, 3vw, 34px);
-  min-height: 30px;
-  padding: 6px 12px;
-  font-size: 12px;
+  min-height: 32px;
+  padding: 7px 14px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 12px 28px rgba(103, 232, 120, 0.16);
@@ -6925,7 +6925,7 @@ textarea:focus-visible {
 }
 
 .studio-shell.visitor-active .home-market-stats {
-  right: clamp(106px, 11vw, 128px);
+  right: clamp(142px, 14vw, 172px);
 }
 
 .home-market-stat {
