@@ -665,3 +665,39 @@ P2 可带观察上线：
 - 若登录弹窗异常，优先回滚 `components/order-console.tsx` 登录状态相关改动和 `app/globals.css` 登录样式。
 - 若同步接口异常，优先检查 `lib/heartbeat-sync.ts`、`lib/caichong.ts`、`app/api/sync/heartbeat/route.ts`、`app/api/sync/order-reminders/route.ts`。
 - 若仅侧栏 tooltip 显示异常，可单独回滚 `data-sidebar-tooltip` 和收起态 tooltip CSS。
+
+## 上线总控结论 2026-05-22 后台结构、支付确认体验与同步韧性
+
+上线结论：可上线，带观察。
+
+判断依据：
+
+- 测试线程已完成本轮回归测试，并修复市场分类误判问题。
+- `npm run build` 通过。
+- `npm run lint` 通过，0 errors，13 warnings。
+- 后台登录页、后台结构、菜单锚点、短信提醒记录、readiness、待支付订单可见性、付款预览页、登录错误提示、心跳同步、订单提醒未授权保护均已验证。
+- 市场分类已修复并重新验证：
+  - 北京文旅金句/图文创意归为 `文案`。
+  - 30 秒推广视频归为 `视频`。
+  - Up 主视频背景配乐归为 `声音`。
+
+本轮纳入上线的测试修复：
+
+- `lib/market-classification.ts`
+  - 提高标题/金句/口号 + 图文/画面/海报/封面的文案权重。
+  - 增加背景音乐/配乐 + 视频/vlog/Up 主场景归入声音。
+  - 收窄视频规则，避免“短视频封面”等投放场景误判为视频交付。
+
+残留风险：
+
+- 真实付款完成后的自动刷新和成功提示仍需上线后优先观察。
+- 后台固定布局、附件预览滚动锁在真实浏览器和窄屏下仍建议人工复核。
+- 心跳接口 `ok:false + HTTP 200` 是新语义，需要观察前台提示、定时任务和日志是否符合预期。
+
+上线后观察：
+
+- 发布后检查 `/api/health/readiness` 是否 `ready: true`。
+- 检查后台 `/admin` 是否可进入，菜单和短信记录是否正常。
+- 检查待支付订单详情是否保留付款链接、倒计时和重新支付入口。
+- 用下一笔低额真实测试单观察付款完成后是否自动进入提交期并弹出成功提示。
+- 观察 `/api/sync/heartbeat` 和 `/api/sync/order-reminders` 是否有高频 warn 或 error。
