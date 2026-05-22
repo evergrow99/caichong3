@@ -754,3 +754,32 @@ P2 可带观察上线：
 - 这次修复解决“页面一直等外部服务”的问题，但如果才虫所有查询和心跳都长时间不可用，支付成功状态仍可能延迟同步。
 - 详情接口超时返回本地缓存时，页面可能先看到旧状态；后续轮询或心跳成功后会再更新。
 - 侧栏 tooltip 是低风险视觉补丁，上线后只需确认展开/收起两种状态提示位置正常。
+
+## 上线总控结论 2026-05-22 支付详情加载防卡死与侧栏提示补丁
+
+上线结论：可上线，带观察。
+
+判断依据：
+
+- 测试线程已完成本轮补丁测试。
+- `npm run build` 通过。
+- `npm run lint` 通过，0 errors，13 warnings。
+- 真实配置下订单详情接口返回 200，详情可读。
+- 慢响应 mock 才虫详情服务下，详情接口返回本地缓存，没有等满 10 秒。
+- mock 日志确认远程详情请求约 4.5 秒被关闭，说明远程刷新超时上限生效。
+- Supabase `operation_logs` 中已出现 `task.detail` warn，文案为 `任务详情远程刷新超时或失败，已返回本地缓存`。
+- 用户心跳 `/api/sync/heartbeat` 返回 200，`ok: true`，`refreshErrorCount: 0`。
+- `/api/sync/order-reminders` 无密钥返回 401，未触发真实短信。
+
+未阻断项：
+
+- 未重新做真实付款端到端链路；该项转为上线后用下一笔低额订单观察。
+- 慢响应 mock 下本机端到端详情响应约 6.89 秒，略高于目标窗口，但已避免无限 loading。
+- 本地 production server 因 `ALLOW_DEV_LOGIN=true` readiness 返回 503，这是本地配置风险提示；生产环境必须保持 `ALLOW_DEV_LOGIN` 关闭。
+
+上线后观察：
+
+- 下一笔低额真实付款后，回到详情页不应长时间停留在 loading。
+- 如果才虫详情接口慢，页面应先显示本地缓存详情，后续轮询或心跳再更新状态。
+- `/admin` 的 operation logs 是否出现高频 `task.detail` warn。
+- `/api/sync/heartbeat` 和 `/api/sync/order-reminders` 是否出现高频才虫超时 warn/error。
