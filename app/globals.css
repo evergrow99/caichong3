@@ -348,8 +348,6 @@ textarea:focus-visible {
     border-radius: 999px;
   }
 
-  .sidebar-collapse-button[data-sidebar-tooltip]:hover::after,
-  .sidebar-collapse-button[data-sidebar-tooltip]:focus-visible::after,
   .studio-shell.sidebar-collapsed [data-sidebar-tooltip]:hover::after,
   .studio-shell.sidebar-collapsed [data-sidebar-tooltip]:focus-visible::after {
     position: absolute;
@@ -367,6 +365,29 @@ textarea:focus-visible {
     padding: 7px 9px;
     pointer-events: none;
     transform: translateY(-50%);
+    white-space: nowrap;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  }
+}
+
+@media (min-width: 721px) {
+  .studio-shell:not(.sidebar-collapsed) .sidebar-collapse-button[data-sidebar-tooltip]:hover::after,
+  .studio-shell:not(.sidebar-collapsed) .sidebar-collapse-button[data-sidebar-tooltip]:focus-visible::after {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    z-index: 80;
+    border: 1px solid rgba(153, 255, 183, 0.14);
+    border-radius: 999px;
+    background: rgba(17, 24, 20, 0.98);
+    color: #edf7ef;
+    content: attr(data-sidebar-tooltip);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 7px 9px;
+    pointer-events: none;
+    transform: translateX(-50%);
     white-space: nowrap;
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
   }
