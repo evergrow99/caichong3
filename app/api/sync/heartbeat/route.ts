@@ -34,10 +34,24 @@ export async function GET(request: Request) {
 
   try {
     const result = await syncPlatformHeartbeat();
+    if (!result.ok) {
+      await recordOperationLog({
+        scope: "heartbeat.platform",
+        level: "warn",
+        message: "平台心跳部分失败，已继续按订单刷新",
+        details: {
+          route: "GET /api/sync/heartbeat",
+          eventSyncError: result.eventSyncError,
+          refreshErrorCount: result.refreshErrorCount,
+          messages: result.messages
+        }
+      });
+    }
+
     return NextResponse.json({
-      ok: true,
+      ...result,
+      ok: result.ok,
       mode: "platform",
-      ...result
     });
   } catch (error) {
     const message = getErrorMessage(error, "刷新任务进展失败");
@@ -58,10 +72,25 @@ export async function POST() {
     const user = await getCurrentUser();
     await ensureUserProfile(user);
     const result = await syncHeartbeat(user);
+    if (!result.ok) {
+      await recordOperationLog({
+        userId: user.id,
+        scope: "heartbeat.user",
+        level: "warn",
+        message: "用户心跳部分失败，已继续按订单刷新",
+        details: {
+          route: "POST /api/sync/heartbeat",
+          eventSyncError: result.eventSyncError,
+          refreshErrorCount: result.refreshErrorCount,
+          messages: result.messages
+        }
+      });
+    }
+
     return NextResponse.json({
-      ok: true,
+      ...result,
+      ok: result.ok,
       mode: "user",
-      ...result
     });
   } catch (error) {
     const message = getErrorMessage(error, "刷新任务进展失败");

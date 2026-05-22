@@ -92,6 +92,7 @@ type TrpcFailure = {
 };
 
 const DEFAULT_BASE_URL = "https://main-api.caichong.net";
+const QUERY_RETRY_DELAYS_MS = [500, 1200];
 
 type RawTask = PublishTask & {
   id?: string;
@@ -258,16 +259,31 @@ function toPublishAttachment(attachment: Attachment) {
 async function trpcQuery<T>(endpoint: string, input: Record<string, unknown> = {}, options: CaichongClientOptions = {}) {
   const { apiKey, baseUrl } = getConfig(options);
   const encodedInput = encodeURIComponent(JSON.stringify(input));
-  const response = await fetch(`${baseUrl}/trpc/${endpoint}?input=${encodedInput}`, {
-    method: "GET",
-    headers: {
-      "X-API-Key": apiKey
-    },
-    cache: "no-store"
-  });
+  let lastError: unknown;
 
-  const payload = (await response.json()) as TrpcSuccess<T> | TrpcFailure;
-  return unwrapTrpc(payload);
+  for (let attempt = 0; attempt <= QUERY_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await fetch(`${baseUrl}/trpc/${endpoint}?input=${encodedInput}`, {
+        method: "GET",
+        headers: {
+          "X-API-Key": apiKey
+        },
+        cache: "no-store"
+      });
+
+      const payload = (await response.json()) as TrpcSuccess<T> | TrpcFailure;
+      return unwrapTrpc(payload);
+    } catch (error) {
+      lastError = error;
+      const retryDelay = QUERY_RETRY_DELAYS_MS[attempt];
+      if (retryDelay === undefined) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+    }
+  }
+
+  throw lastError;
 }
 
 async function trpcMutation<T>(endpoint: string, input: Record<string, unknown> = {}, options: CaichongClientOptions = {}) {

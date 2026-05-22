@@ -40,6 +40,19 @@ export async function GET(request: Request) {
 
   try {
     heartbeat = await syncPlatformHeartbeat();
+    if (!heartbeat.ok) {
+      await recordOperationLog({
+        scope: "order.sms_reminder.heartbeat",
+        level: "warn",
+        message: "平台心跳部分失败，已继续执行本地短信提醒兜底",
+        details: {
+          route: "GET /api/sync/order-reminders",
+          eventSyncError: heartbeat.eventSyncError,
+          refreshErrorCount: heartbeat.refreshErrorCount,
+          messages: heartbeat.messages
+        }
+      });
+    }
   } catch (error) {
     const message = getErrorMessage(error, "平台心跳同步失败，已继续执行本地短信提醒兜底");
     heartbeat = {

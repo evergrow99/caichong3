@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AICHONG 付款确认状态预览</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        overflow: hidden;
+        background: #06100b;
+        color: rgba(246, 255, 247, 0.94);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+
+      .app-shell {
+        display: grid;
+        min-height: 100%;
+        grid-template-columns: 264px minmax(0, 1fr);
+        background:
+          radial-gradient(circle at 54% 0%, rgba(52, 171, 84, 0.12), transparent 32%),
+          linear-gradient(180deg, #07110c 0%, #020705 100%);
+      }
+
+      .sidebar {
+        display: grid;
+        height: 100vh;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        gap: 18px;
+        border-right: 1px solid rgba(218, 233, 219, 0.1);
+        background: rgba(248, 250, 248, 0.96);
+        color: #111712;
+        padding: 20px 16px;
+      }
+
+      .brand-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 8px;
+      }
+
+      .brand-row img {
+        width: 150px;
+        height: auto;
+        display: block;
+        filter: invert(1) hue-rotate(90deg) saturate(0.8);
+      }
+
+      .collapse-mark {
+        color: #7e8981;
+        font-size: 18px;
+      }
+
+      .menu {
+        display: grid;
+        gap: 6px;
+      }
+
+      .menu-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 14px;
+        color: #172018;
+        padding: 11px 12px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .menu-item.active,
+      .menu-item:hover {
+        background: #edf1ed;
+      }
+
+      .nav-icon {
+        display: grid;
+        width: 22px;
+        height: 22px;
+        place-items: center;
+        border-radius: 8px;
+        color: #0d160f;
+        font-size: 14px;
+      }
+
+      .orders {
+        display: grid;
+        min-height: 0;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 10px;
+        margin-top: 4px;
+      }
+
+      .orders-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 8px;
+        color: #6d766f;
+        font-size: 12px;
+        font-weight: 400;
+      }
+
+      .order-list {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        overflow: hidden;
+      }
+
+      .order-item {
+        display: grid;
+        gap: 6px;
+        border-radius: 16px;
+        padding: 12px;
+        color: #172018;
+      }
+
+      .order-item.active {
+        background: #edf1ed;
+      }
+
+      .order-title {
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 760;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .order-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        color: #6d766f;
+        font-size: 12px;
+      }
+
+      .account {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 16px;
+        background: #edf1ed;
+        padding: 12px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .avatar {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border-radius: 999px;
+        background: #dfe7e0;
+      }
+
+      .workspace {
+        height: 100vh;
+        overflow: auto;
+        padding: 38px clamp(24px, 4vw, 58px) 72px;
+      }
+
+      .preview-toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 18px;
+        pointer-events: none;
+      }
+
+      .state-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        pointer-events: auto;
+      }
+
+      .state-controls button {
+        border: 1px solid rgba(184, 221, 191, 0.2);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(236, 247, 237, 0.72);
+        padding: 9px 13px;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      .state-controls button[aria-pressed="true"] {
+        border-color: rgba(102, 236, 122, 0.58);
+        background: rgba(102, 236, 122, 0.14);
+        color: #eaffec;
+      }
+
+      .detail-stack {
+        display: grid;
+        gap: 18px;
+        max-width: 980px;
+        margin: 0 auto;
+      }
+
+      .detail-card,
+      .submissions-card {
+        border: 1px solid rgba(125, 201, 143, 0.24);
+        border-radius: 24px;
+        background:
+          linear-gradient(180deg, rgba(24, 43, 31, 0.88), rgba(10, 20, 14, 0.94)),
+          rgba(14, 27, 19, 0.94);
+        box-shadow: 0 20px 70px rgba(0, 0, 0, 0.28);
+      }
+
+      .detail-card {
+        padding: 26px;
+      }
+
+      .section-eyebrow {
+        margin-bottom: 10px;
+        color: rgba(218, 233, 219, 0.48);
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      .task-title {
+        margin: 0 0 18px;
+        color: #f7fff8;
+        font-size: clamp(28px, 4.2vw, 46px);
+        font-weight: 780;
+        line-height: 1.18;
+        letter-spacing: 0;
+      }
+
+      .task-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      .task-meta span {
+        border: 1px solid rgba(218, 233, 219, 0.12);
+        border-radius: 999px;
+        color: rgba(218, 233, 219, 0.62);
+        padding: 8px 11px;
+        font-size: 13px;
+      }
+
+      .task-meta span[hidden] {
+        display: none;
+      }
+
+      .payment-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 18px;
+        border: 1px solid rgba(102, 236, 122, 0.3);
+        border-radius: 20px;
+        background: rgba(8, 35, 18, 0.82);
+        padding: 20px 22px;
+      }
+
+      .payment-panel[hidden] {
+        display: none;
+      }
+
+      .payment-copy {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .payment-heading {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+        color: #f7fff8;
+        font-size: 22px;
+        font-weight: 740;
+        line-height: 1.25;
+      }
+
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(218, 233, 219, 0.2);
+        border-top-color: #66ec7a;
+        border-radius: 999px;
+        animation: spin 0.8s linear infinite;
+      }
+
+      .payment-desc {
+        margin: 0;
+        color: rgba(218, 233, 219, 0.68);
+        font-size: 14px;
+        font-weight: 400;
+        line-height: 1.7;
+      }
+
+      .payment-action {
+        border: 1px solid rgba(102, 236, 122, 0.62);
+        border-radius: 999px;
+        background: #16e563;
+        color: #031008;
+        padding: 13px 18px;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 760;
+        text-decoration: none;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+
+      .countdown {
+        color: #66ec7a;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .reference-card {
+        margin-top: 18px;
+        border: 1px solid rgba(218, 233, 219, 0.1);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.04);
+        padding: 18px;
+      }
+
+      .reference-card p {
+        margin: 0;
+        color: rgba(246, 255, 247, 0.82);
+        font-size: 16px;
+        font-weight: 460;
+        line-height: 1.7;
+      }
+
+      .submissions-card {
+        min-height: 260px;
+        padding: 22px;
+      }
+
+      .submissions-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .submissions-header h2 {
+        margin: 0;
+        color: #f7fff8;
+        font-size: 22px;
+        line-height: 1.25;
+      }
+
+      .status-chip {
+        border: 1px solid rgba(102, 236, 122, 0.24);
+        border-radius: 999px;
+        background: rgba(102, 236, 122, 0.1);
+        color: rgba(215, 245, 220, 0.82);
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+
+      .empty-submissions {
+        display: grid;
+        min-height: 160px;
+        place-items: center;
+        border: 1px dashed rgba(218, 233, 219, 0.14);
+        border-radius: 18px;
+        color: rgba(218, 233, 219, 0.48);
+        font-size: 14px;
+      }
+
+      .success-modal-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: none;
+        place-items: center;
+        padding: 24px;
+        background: rgba(0, 0, 0, 0.46);
+        backdrop-filter: blur(5px);
+      }
+
+      .success-modal-layer.open {
+        display: grid;
+      }
+
+      .success-modal {
+        width: min(520px, 100%);
+        border: 1px solid rgba(125, 201, 143, 0.34);
+        border-radius: 28px;
+        background:
+          linear-gradient(180deg, rgba(28, 52, 36, 0.96), rgba(10, 20, 14, 0.98)),
+          #102016;
+        padding: 34px 34px 30px;
+        color: rgba(246, 255, 247, 0.94);
+        box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42), 0 0 40px rgba(102, 236, 122, 0.1);
+      }
+
+      .success-modal h2 {
+        margin: 0 0 14px;
+        color: #f7fff8;
+        font-size: 34px;
+        line-height: 1.18;
+        letter-spacing: 0;
+      }
+
+      .success-modal p {
+        margin: 0;
+        color: rgba(218, 233, 219, 0.76);
+        font-size: 17px;
+        font-weight: 400;
+        line-height: 1.75;
+      }
+
+      .success-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 30px;
+      }
+
+      .success-modal-actions button {
+        border: 0;
+        border-radius: 999px;
+        background: #16e563;
+        color: #031008;
+        padding: 13px 22px;
+        font: inherit;
+        font-size: 15px;
+        font-weight: 760;
+        cursor: pointer;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (max-width: 860px) {
+        body {
+          overflow: auto;
+        }
+
+        .app-shell {
+          min-height: 100vh;
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        .workspace {
+          height: auto;
+          min-height: 100vh;
+          padding: 24px 14px 48px;
+        }
+
+        .preview-toolbar {
+          position: static;
+          justify-content: start;
+        }
+
+        .detail-card,
+        .submissions-card {
+          border-radius: 20px;
+          padding: 18px;
+        }
+
+        .payment-panel {
+          grid-template-columns: 1fr;
+        }
+
+        .payment-action {
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="侧边栏预览">
+        <div class="brand-row">
+          <img src="/logo.svg" alt="AICHONG" />
+          <span class="collapse-mark">‹</span>
+        </div>
+
+        <nav class="menu" aria-label="主导航">
+          <div class="menu-item active"><span class="nav-icon">＋</span><span>发布新任务</span></div>
+          <div class="menu-item"><span class="nav-icon">◎</span><span>我要接单</span></div>
+          <div class="menu-item"><span class="nav-icon">?</span><span>市场规则</span></div>
+        </nav>
+
+        <section class="orders">
+          <div class="orders-title">
+            <span>我的任务</span>
+            <span>全部</span>
+          </div>
+          <div class="order-list">
+            <article class="order-item active">
+              <div class="order-title">我要做一组小红书产品文案，突出轻巧、可爱...</div>
+              <div class="order-meta"><span data-sidebar-status>待支付</span><span>¥6</span></div>
+            </article>
+            <article class="order-item">
+              <div class="order-title">给猫咪的日常 vlog 做一段轻快背景音乐</div>
+              <div class="order-meta"><span>提交期</span><span>¥12</span></div>
+            </article>
+            <article class="order-item">
+              <div class="order-title">帮我整理一份旅行图文标题方案</div>
+              <div class="order-meta"><span>已完成</span><span>¥8</span></div>
+            </article>
+          </div>
+        </section>
+
+        <div class="account">
+          <span class="avatar">用</span>
+          <span>用户 1267</span>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <div class="preview-toolbar">
+          <div class="state-controls" aria-label="切换预览状态">
+            <button type="button" data-state="waiting" aria-pressed="true">等待确认</button>
+            <button type="button" data-state="paid" aria-pressed="false">付款已确认</button>
+            <button type="button" data-state="expired" aria-pressed="false">链接已超期</button>
+          </div>
+        </div>
+
+        <div class="detail-stack">
+          <section class="detail-card">
+            <div class="section-eyebrow">任务详情</div>
+            <h1 class="task-title">我要做一组小红书产品文案，突出轻巧、可爱、适合送礼。</h1>
+            <div class="task-meta">
+              <span>报酬 ¥6</span>
+              <span data-created-meta>创建时间 05/21 14:30</span>
+              <span data-time-meta hidden>付款截止 05/22 14:30</span>
+              <span data-link-meta hidden>支付链接有效 30 分钟</span>
+            </div>
+
+            <section class="payment-panel" data-payment-panel aria-live="polite">
+              <div class="payment-copy">
+                <h2 class="payment-heading">
+                  <span class="spinner" data-spinner aria-hidden="true"></span>
+                  <span data-title>等待付款完成</span>
+                  <span class="countdown" data-countdown>28:36</span>
+                </h2>
+                <p class="payment-desc" data-desc>付款完成后，系统会自动更新任务状态。</p>
+              </div>
+              <a class="payment-action" href="#" data-action>重新打开付款页</a>
+            </section>
+
+            <div class="reference-card">
+              <p>需求描述会在这里展示。付款确认前，任务不会进入正式提交期；付款确认后，这里会显示提交截止时间和收到投稿的进度。</p>
+            </div>
+          </section>
+
+          <section class="submissions-card">
+            <div class="submissions-header">
+              <h2>收到投稿</h2>
+              <span class="status-chip" data-status>待支付</span>
+            </div>
+            <div class="empty-submissions" data-empty>付款确认后开始等待投稿</div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div class="success-modal-layer" data-success-modal role="dialog" aria-modal="true" aria-labelledby="success-title">
+      <div class="success-modal">
+        <h2 id="success-title">恭喜发布成功</h2>
+        <p>付款完成，任务已成功进入提交期。<br />您可以坐等创作者的投稿啦。</p>
+        <div class="success-modal-actions">
+          <button type="button" data-modal-close>知道了</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const states = {
+        waiting: {
+          status: "待支付",
+          sidebarStatus: "待支付",
+          title: "等待付款完成",
+          countdown: "28:36",
+          desc: "付款完成后，将自动更新任务状态。如付款失败，可重新支付。",
+          action: "重新支付",
+          timeMeta: "",
+          linkMeta: "",
+          empty: "付款确认后开始等待投稿",
+          spinner: true,
+          showPaymentPanel: true,
+          showSuccessModal: false,
+          showCreatedMeta: true
+        },
+        paid: {
+          status: "提交期",
+          sidebarStatus: "提交期",
+          title: "",
+          countdown: "",
+          desc: "",
+          action: "",
+          timeMeta: "发布时间 05/21 14:32",
+          linkMeta: "提交期截止 05/24 14:32",
+          empty: "还没有收到投稿，系统会持续同步",
+          spinner: false,
+          showPaymentPanel: false,
+          showSuccessModal: true,
+          showCreatedMeta: false
+        },
+        expired: {
+          status: "待支付",
+          sidebarStatus: "待支付",
+          title: "支付已超时",
+          countdown: "",
+          desc: "支付链接已超时，请重新支付。",
+          action: "重新支付",
+          timeMeta: "",
+          linkMeta: "",
+          empty: "付款完成前，任务不会开始处理",
+          spinner: false,
+          showPaymentPanel: true,
+          showSuccessModal: false,
+          showCreatedMeta: true
+        }
+      };
+
+      const controls = document.querySelectorAll("[data-state]");
+      const status = document.querySelector("[data-status]");
+      const sidebarStatus = document.querySelector("[data-sidebar-status]");
+      const title = document.querySelector("[data-title]");
+      const countdown = document.querySelector("[data-countdown]");
+      const desc = document.querySelector("[data-desc]");
+      const action = document.querySelector("[data-action]");
+      const createdMeta = document.querySelector("[data-created-meta]");
+      const timeMeta = document.querySelector("[data-time-meta]");
+      const linkMeta = document.querySelector("[data-link-meta]");
+      const empty = document.querySelector("[data-empty]");
+      const spinner = document.querySelector("[data-spinner]");
+      const paymentPanel = document.querySelector("[data-payment-panel]");
+      const successModal = document.querySelector("[data-success-modal]");
+      const modalClose = document.querySelector("[data-modal-close]");
+
+      function setState(nextState) {
+        const data = states[nextState];
+        status.textContent = data.status;
+        sidebarStatus.textContent = data.sidebarStatus;
+        title.textContent = data.title;
+        countdown.textContent = data.countdown;
+        countdown.hidden = !data.countdown;
+        desc.textContent = data.desc;
+        action.textContent = data.action;
+        createdMeta.hidden = !data.showCreatedMeta;
+        timeMeta.textContent = data.timeMeta;
+        timeMeta.hidden = !data.timeMeta;
+        linkMeta.textContent = data.linkMeta;
+        linkMeta.hidden = !data.linkMeta;
+        empty.textContent = data.empty;
+        spinner.style.display = data.spinner ? "inline-block" : "none";
+        paymentPanel.hidden = !data.showPaymentPanel;
+        successModal.classList.toggle("open", data.showSuccessModal);
+        controls.forEach((button) => {
+          button.setAttribute("aria-pressed", String(button.dataset.state === nextState));
+        });
+      }
+
+      controls.forEach((button) => {
+        button.addEventListener("click", () => setState(button.dataset.state));
+      });
+
+      modalClose.addEventListener("click", () => {
+        successModal.classList.remove("open");
+      });
+    </script>
+  </body>
+</html>

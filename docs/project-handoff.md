@@ -1,6 +1,6 @@
 # AICHONG Project Handoff
 
-Last updated: 2026-05-18
+Last updated: 2026-05-22
 
 This document is the first thing to read in a new Codex thread. Also read `DESIGN.md`, then run `git status --short --branch` before editing.
 
@@ -76,6 +76,31 @@ The user-facing product should feel like AICHONG owns the relationship. Do not e
 - The refresh button calls `POST /api/sync/heartbeat`, then reloads task list and current detail.
 - Loading a task detail successfully marks that task's known submissions as read.
 - Terminal tasks (`COMPLETED`, `CLOSED`) should not show the refresh button because further Caichong sync is not useful and can be slow.
+- If a detail page is loaded with `?task=...`, show the detail loading state immediately. Do not flash the empty "请选择任务" state before the task is fetched.
+- When task detail returns a newer status, merge that task back into the sidebar list immediately so the sidebar status cannot stay stale after payment or sync.
+
+### Payment Flow
+
+- The payment bridge page is a branded AICHONG dark-green page, written into the newly opened payment window before redirecting to the real payment URL.
+- After task creation, the original page should navigate to the created task detail. Do not rely on a manual "I paid" confirmation flow.
+- Pending payment detail shows:
+  - waiting title with countdown while the payment link is valid
+  - `支付已超时` and `重新支付` when the 30-minute payment link expires
+- Payment polling should continue while the selected task is `PENDING_PAYMENT`.
+- On payment success (`ACTIVE`), hide the payment panel and show the shared success dialog:
+  - title: `恭喜发布成功`
+  - copy: `付款完成，任务已成功进入提交期。` / `您可以坐等创作者的投稿啦。`
+  - button: `知道了`
+- Empty submission copy for unpaid orders: `完成付款后，任务才会正式发布`.
+- Empty submission copy after publishing but before submissions: `暂未收到投稿`.
+
+### Login Modal
+
+- Login/register modal closes only via the close button. Do not close on backdrop click or Space key.
+- Sending code changes the button text to countdown format: `60s后重新发送`.
+- Code errors and login failures render inside the modal, not under the publisher composer.
+- After logout and reopening the modal, keep the phone number, clear the verification code, and provide an inline phone clear button.
+- Logout should clear stale task/detail/payment state so old private order errors do not leak into the public home composer.
 
 ## Data And Backend Rules
 
@@ -132,6 +157,13 @@ Current chain:
 - New submission SMS requires the submission to have been synced from Caichong into local Supabase first.
 - Selection-started and selection-deadline reminders can be calculated from local `deadline_at` and `submission_count` even when Caichong status did not transition.
 - `order_sms_reminders.reminder_key` prevents duplicate SMS sends.
+- 2026-05-22 incident: Caichong had a submission at 17:08, but local Supabase only synced it at 18:00 because repeated heartbeat attempts failed with `暂时无法连接外部服务，请稍后重试。`
+- The fix is in the sync strategy:
+  - `agent.events` failure must not abort the whole heartbeat.
+  - The system should continue refreshing local syncable orders one by one through task detail/submission queries.
+  - One order failure must not block other orders.
+  - Caichong GET queries have light retries for short network hiccups.
+  - Partial heartbeat failure should be recorded as `warn` in `operation_logs`.
 - 2026-05-19 incident: a submission was in local Supabase at 16:30:49, but SMS sent at 19:18:30 because GitHub Actions scheduled runs had a 3h33m gap (`15:45:19` -> `19:18:19`). GitHub Actions schedule is not reliable enough for user-facing near-real-time SMS.
 
 External Cron recommendation:
@@ -194,30 +226,34 @@ Treat these as already-started work. Read diffs before editing; do not overwrite
 
 ## Current Git State
 
-At handoff, `main` is aligned with `origin/main` at:
+At the 2026-05-22 handoff, latest local commit is:
 
 ```text
-d3d51d8 Run order reminder sync every 30 minutes
+597cdaf Update release control handoff
 ```
 
-Uncommitted local changes at handoff:
+The 2026-05-22收口范围 includes these touched areas:
 
 ```text
  M app/admin/page.tsx
+ M app/api/sync/heartbeat/route.ts
+ M app/api/sync/order-reminders/route.ts
  M app/globals.css
- M app/page.tsx
+ M components/admin-login-form.tsx
+ M components/app-dialog.tsx
  M components/order-console.tsx
- M components/static-market-nav.tsx
- M lib/admin.ts
- M lib/market-activity.ts
-?? app/admin/login/
-?? app/api/admin/
-?? app/api/platform/market/
-?? app/market/
-?? components/admin-login-form.tsx
+ M docs/current-release-test-brief.md
+ M docs/release-management.md
+ M lib/caichong.ts
+ M lib/heartbeat-sync.ts
+ M lib/market-classification.ts
+ M lib/task-rules.ts
+?? docs/project-summary-nontechnical.md
+?? public/payment-bridge-preview.html
+?? public/payment-confirmation-preview.html
 ```
 
-These are not part of the heartbeat/SMS fixes. Do not revert them unless the user explicitly asks.
+After this handoff is committed, run `git status --short --branch` before new edits and treat any remaining local changes as separate work.
 
 ## Deployment Notes
 

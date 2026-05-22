@@ -139,10 +139,10 @@ export function getTaskStep(status?: string) {
 }
 
 export function getEmptySubmissionText(status?: string, expectedCount = 0) {
-  if (status === "PENDING_PAYMENT") return "这单还没有付款，所以暂时不会开始处理。";
+  if (status === "PENDING_PAYMENT") return "完成付款后，任务才会正式发布";
   if (status === "ACTIVE" && expectedCount > 0) return "订单显示已有投稿，但暂时没有读到详情。请稍后刷新查看。";
   if (status === "PENDING_SELECTION" && expectedCount > 0) return "暂时没有读到投稿详情，请稍后刷新查看。";
-  return "这里还没有投稿内容。";
+  return "暂未收到投稿";
 }
 
 export function getCloseReasonLabel(reason?: string) {

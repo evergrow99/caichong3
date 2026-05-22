@@ -317,6 +317,7 @@ textarea:focus-visible {
     display: flex;
     flex-direction: column;
     align-items: stretch;
+    overflow: visible;
   }
 
   .studio-shell.sidebar-collapsed .studio-brand-block,
@@ -330,15 +331,41 @@ textarea:focus-visible {
     margin-top: auto;
   }
 
+  .studio-shell.sidebar-collapsed [data-sidebar-tooltip] {
+    position: relative;
+  }
+
   .studio-shell.sidebar-collapsed .studio-menu a,
   .studio-shell.sidebar-collapsed .studio-menu button,
   .studio-shell.sidebar-collapsed .studio-bottom-links a,
   .studio-shell.sidebar-collapsed .sidebar-tools button,
   .studio-shell.sidebar-collapsed .account-trigger {
+    position: relative;
     width: 38px;
     height: 38px;
     margin-inline: auto;
     border-radius: 999px;
+  }
+
+  .studio-shell.sidebar-collapsed [data-sidebar-tooltip]:hover::after,
+  .studio-shell.sidebar-collapsed [data-sidebar-tooltip]:focus-visible::after {
+    position: absolute;
+    top: 50%;
+    left: calc(100% + 12px);
+    z-index: 80;
+    border: 1px solid rgba(153, 255, 183, 0.14);
+    border-radius: 999px;
+    background: rgba(17, 24, 20, 0.98);
+    color: #edf7ef;
+    content: attr(data-sidebar-tooltip);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 7px 9px;
+    pointer-events: none;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
   }
 }
 
@@ -1312,6 +1339,8 @@ textarea:focus-visible {
   z-index: 80;
   display: grid;
   place-items: center;
+  overflow: hidden;
+  overscroll-behavior: contain;
   padding: 20px;
 }
 
@@ -1551,9 +1580,41 @@ textarea:focus-visible {
   box-shadow: 0 0 0 3px rgba(103, 232, 120, 0.12);
 }
 
+.phone-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.phone-input-wrap input {
+  padding-right: 46px;
+}
+
+.phone-clear-button {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(244, 248, 243, 0.68);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.phone-clear-button:hover {
+  background: rgba(103, 232, 120, 0.14);
+  color: #ffffff;
+}
+
 .code-input-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, auto);
   gap: 8px;
 }
 
@@ -1580,6 +1641,26 @@ textarea:focus-visible {
   cursor: not-allowed;
   color: rgba(202, 213, 204, 0.46);
   opacity: 1;
+}
+
+.login-inline-message {
+  border: 1px solid rgba(153, 255, 183, 0.14);
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.login-inline-message.neutral {
+  background: rgba(103, 232, 120, 0.1);
+  color: rgba(218, 246, 222, 0.86);
+}
+
+.login-inline-message.error {
+  border-color: rgba(255, 137, 128, 0.2);
+  background: rgba(93, 36, 28, 0.42);
+  color: #ffb2a9;
 }
 
 .login-modal .btn.primary {
@@ -1629,11 +1710,9 @@ textarea:focus-visible {
 .admin-login-brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   color: #f7fbf7;
   font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.08em;
 }
 
 .admin-login-brand img {
@@ -1642,21 +1721,14 @@ textarea:focus-visible {
 }
 
 .admin-login-copy {
-  margin: 28px 0 22px;
+  margin: 26px 0 22px;
 }
 
 .admin-login-copy h1 {
-  margin: 12px 0 0;
+  margin: 0;
   color: #f7fbf7;
   font-size: 30px;
   line-height: 1.15;
-}
-
-.admin-login-copy p {
-  margin: 12px 0 0;
-  color: rgba(202, 213, 204, 0.7);
-  font-size: 14px;
-  line-height: 1.65;
 }
 
 .admin-login-message {
@@ -1680,6 +1752,7 @@ textarea:focus-visible {
 
 .admin-login-return {
   display: inline-flex;
+  justify-self: start;
   margin-top: 18px;
   color: rgba(189, 248, 197, 0.74);
   font-size: 13px;
@@ -3855,7 +3928,7 @@ textarea:focus-visible {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(880px, 94vw);
-  max-height: min(760px, 88vh);
+  max-height: min(760px, calc(100dvh - 40px));
   border: 1px solid rgba(153, 255, 183, 0.14);
   border-radius: 24px;
   background:
@@ -3881,6 +3954,9 @@ textarea:focus-visible {
 .attachment-preview-modal-body {
   min-height: 220px;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid rgba(153, 255, 183, 0.11);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.045);
@@ -4604,6 +4680,87 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.payment-status-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  margin: 18px 0;
+  border: 1px solid rgba(103, 232, 120, 0.34);
+  border-radius: 18px;
+  background: rgba(8, 35, 18, 0.76);
+  padding: 18px 20px;
+}
+
+.payment-status-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.payment-status-copy strong {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: #f4fbf4;
+  font-size: 20px;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.payment-status-copy strong span {
+  color: #67e878;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+}
+
+.payment-status-copy p {
+  margin: 0;
+  color: rgba(212, 226, 215, 0.72);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+.payment-status-action {
+  border: 1px solid rgba(103, 232, 120, 0.62);
+  border-radius: 999px;
+  background: #16e563;
+  color: #031008;
+  padding: 13px 18px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.payment-status-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.payment-status-panel.expired {
+  border-color: rgba(103, 232, 120, 0.28);
+}
+
+@media (max-width: 720px) {
+  .payment-status-panel {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .payment-status-copy strong {
+    flex-wrap: wrap;
+    font-size: 18px;
+  }
+
+  .payment-status-action {
+    width: 100%;
+  }
+}
+
 .actions.compact {
   margin-top: 14px;
 }
@@ -5320,7 +5477,117 @@ textarea:focus-visible {
 }
 
 .admin-shell {
-  width: min(1280px, calc(100% - 32px));
+  width: min(1440px, calc(100% - 32px));
+  height: 100dvh;
+  overflow: hidden;
+  padding: 104px 0 0;
+}
+
+.admin-shell .topbar {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  z-index: 20;
+  width: min(1440px, calc(100% - 32px));
+  box-sizing: border-box;
+  background: rgba(5, 16, 10, 0.9);
+  padding: 18px 0 14px;
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px);
+}
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  height: calc(100dvh - 104px);
+  overflow: hidden;
+}
+
+.admin-sidebar {
+  display: grid;
+  gap: 14px;
+  align-self: start;
+  max-height: calc(100dvh - 104px);
+  overflow-y: auto;
+  border: 1px solid rgba(223, 216, 202, 0.88);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.admin-sidebar-heading {
+  display: grid;
+  gap: 5px;
+  font-family: ui-sans-serif, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.admin-sidebar-heading strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.admin-sidebar-heading span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.admin-nav {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--ink);
+  font-family: ui-sans-serif, "PingFang SC", "Microsoft YaHei", sans-serif;
+  text-decoration: none;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.admin-nav-link:hover,
+.admin-nav-link:focus-visible {
+  border-color: rgba(0, 124, 118, 0.24);
+  background: rgba(0, 124, 118, 0.08);
+  color: var(--accent-strong);
+  outline: none;
+}
+
+.admin-nav-link span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-nav-link small {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.admin-content {
+  display: grid;
+  min-width: 0;
+  max-height: calc(100dvh - 104px);
+  overflow-y: auto;
+  padding-bottom: 56px;
+}
+
+.admin-panel[id],
+.admin-action-bar[id] {
+  scroll-margin-top: 18px;
 }
 
 .admin-metrics {
@@ -5546,6 +5813,15 @@ textarea:focus-visible {
 
 .admin-sms-table {
   min-width: 1100px;
+}
+
+.admin-sms-table th:nth-child(3),
+.admin-sms-table td:nth-child(3) {
+  min-width: 76px;
+}
+
+.admin-sms-table td:nth-child(3) .chip {
+  padding: 4px 10px;
 }
 
 .admin-table th,
@@ -6105,6 +6381,39 @@ textarea:focus-visible {
   .detail-summary {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .admin-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-shell {
+    padding-top: 154px;
+  }
+
+  .admin-sidebar {
+    overflow-x: auto;
+    max-height: none;
+  }
+
+  .admin-layout,
+  .admin-content {
+    height: calc(100dvh - 154px);
+    max-height: calc(100dvh - 154px);
+  }
+
+  .admin-sidebar-heading {
+    display: none;
+  }
+
+  .admin-nav {
+    display: flex;
+    gap: 8px;
+    min-width: max-content;
+  }
+
+  .admin-nav-link {
+    min-height: 36px;
   }
 
   .admin-metrics {
@@ -7340,7 +7649,8 @@ textarea:focus-visible {
 }
 
 .admin-shell .panel,
-.admin-shell .metric-card {
+.admin-shell .metric-card,
+.admin-shell .admin-sidebar {
   border-color: var(--line);
   background:
     radial-gradient(circle at 86% 0%, rgba(103, 232, 120, 0.06), transparent 28%),
@@ -7350,6 +7660,24 @@ textarea:focus-visible {
 }
 
 .admin-shell .metric-card strong {
+  color: #bdf8c5;
+}
+
+.admin-shell .admin-sidebar-heading strong,
+.admin-shell .admin-nav-link {
+  color: var(--ink);
+}
+
+.admin-shell .admin-sidebar-heading span,
+.admin-shell .admin-nav-link small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.admin-shell .admin-nav-link:hover,
+.admin-shell .admin-nav-link:focus-visible {
+  border-color: rgba(103, 232, 120, 0.22);
+  background: rgba(103, 232, 120, 0.08);
   color: #bdf8c5;
 }
 
@@ -7412,6 +7740,9 @@ textarea:focus-visible {
   border-color: var(--line);
   background: rgba(255, 255, 255, 0.055);
   color: rgba(237, 247, 239, 0.74);
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
 }
 
 .admin-shell .chip.danger-chip {

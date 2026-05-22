@@ -44,8 +44,18 @@ const DELIVERY_RULES: CategoryRule[] = [
 const CONTEXT_RULES: CategoryRule[] = [
   {
     category: "文案",
+    pattern: /(?:标题|金句|口号|slogan).{0,24}(?:图文|画面|海报|封面)|(?:图文|画面|海报|封面).{0,24}(?:标题|金句|口号|slogan)/i,
+    weight: 5
+  },
+  {
+    category: "文案",
     pattern: /视频脚本|短视频脚本|分镜脚本|口播稿|拍摄脚本|小红书文案|推广文案|品牌文案/i,
     weight: 4
+  },
+  {
+    category: "视频",
+    pattern: /(?:制作|生成|剪辑|交付|需要|要求|完成|做).{0,18}(?:\d+\s*(?:秒|分钟)|短视频|视频|成片)|(?:视频|短片|成片).{0,18}(?:\d+\s*(?:秒|分钟)|制作|生成|剪辑|交付|需要|要求|完成)/i,
+    weight: 11
   },
   {
     category: "图片",

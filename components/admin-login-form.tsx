@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 
 type AdminLoginFormProps = {
   initialReason?: string;
@@ -29,13 +29,6 @@ export function AdminLoginForm({ initialReason }: AdminLoginFormProps) {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const canSendCode = isPhoneValid(phone) && !isSendingCode;
   const canLogin = isPhoneValid(phone) && isCodeValid(code) && !isLoggingIn;
-  const helperText = useMemo(() => {
-    if (initialReason === "forbidden") {
-      return "请切换为管理员手机号后重新登录后台。";
-    }
-
-    return "使用管理员手机号验证后进入运营后台。";
-  }, [initialReason]);
 
   async function sendCode() {
     if (!isPhoneValid(phone)) {
@@ -57,7 +50,11 @@ export function AdminLoginForm({ initialReason }: AdminLoginFormProps) {
           body: JSON.stringify({ phone })
         })
       );
-      setMessage(result.message || "验证码已发送，请查看短信。");
+      if (result.message && !result.message.includes("开发环境")) {
+        setMessage(result.message);
+      } else {
+        setMessage(null);
+      }
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "验证码发送失败");
     } finally {
@@ -105,12 +102,9 @@ export function AdminLoginForm({ initialReason }: AdminLoginFormProps) {
       <section className="admin-login-card" aria-labelledby="admin-login-title">
         <div className="admin-login-brand">
           <img src="/logo-mark.svg" alt="" aria-hidden="true" />
-          <span>AICHONG</span>
         </div>
         <div className="admin-login-copy">
-          <span className="market-kicker">运营后台</span>
-          <h1 id="admin-login-title">管理员登录</h1>
-          <p>{helperText}</p>
+          <h1 id="admin-login-title">运营后台</h1>
         </div>
 
         <form className="modal-login-form" onSubmit={login}>
@@ -148,7 +142,7 @@ export function AdminLoginForm({ initialReason }: AdminLoginFormProps) {
           </button>
         </form>
 
-        <Link className="admin-login-return" href="/">
+        <Link className="admin-login-return" href="/" target="_blank" rel="noreferrer">
           返回发单工作台
         </Link>
       </section>

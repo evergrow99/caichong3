@@ -17,9 +17,12 @@ import { getTaskService, isUsingMockCaichong } from "@/lib/task-service";
 import { isSyncableTaskStatus } from "@/lib/task-rules";
 
 type SyncResult = {
+  ok: boolean;
   source: "mock" | "caichong";
   checkedEvents: number;
   ackedEventIds: number[];
+  eventSyncError?: string;
+  refreshErrorCount: number;
   messages: string[];
 };
 
@@ -107,43 +110,53 @@ async function handleEvent(event: AgentEvent, taskService: TaskService, findOrde
 
 async function refreshOrders(orders: Awaited<ReturnType<typeof listByUser>>, taskService: TaskService) {
   const messages: string[] = [];
+  let errorCount = 0;
 
   for (const order of orders) {
     if (taskService.source === "caichong" && !uuidPattern.test(order.caichongTaskId)) {
       continue;
     }
 
-    const latestTask = await taskService.service.getTask(order.caichongTaskId);
-    const syncedTask = (await updateFromCaichongTask(order.id, latestTask)) || latestTask;
+    try {
+      const latestTask = await taskService.service.getTask(order.caichongTaskId);
+      const syncedTask = (await updateFromCaichongTask(order.id, latestTask)) || latestTask;
 
-    if ((syncedTask.submissionCount || 0) > 0) {
-      try {
-        const submissionData = await taskService.service.getSubmissions(order.caichongTaskId);
-        const submissions = normalizeSubmissions(submissionData);
+      if ((syncedTask.submissionCount || 0) > 0) {
+        try {
+          const submissionData = await taskService.service.getSubmissions(order.caichongTaskId);
+          const submissions = normalizeSubmissions(submissionData);
 
-        await Promise.all(
-          submissions.map((submission) =>
-            upsertSubmission({
-              orderId: order.id,
-              submission
-            })
-          )
-        );
+          await Promise.all(
+            submissions.map((submission) =>
+              upsertSubmission({
+                orderId: order.id,
+                submission
+              })
+            )
+          );
 
-        if (submissions.length > 0) {
-          messages.push(`任务 ${order.caichongTaskId} 已同步 ${submissions.length} 条投稿`);
+          if (submissions.length > 0) {
+            messages.push(`任务 ${order.caichongTaskId} 已同步 ${submissions.length} 条投稿`);
+          }
+        } catch (error) {
+          errorCount += 1;
+          messages.push(`任务 ${order.caichongTaskId} 投稿详情同步失败：${getErrorMessage(error)}`);
         }
-      } catch (error) {
-        messages.push(`任务 ${order.caichongTaskId} 投稿详情同步失败：${getErrorMessage(error)}`);
       }
-    }
 
-    if (syncedTask.status !== order.status) {
-      messages.push(`任务 ${order.caichongTaskId} 状态已更新：${order.status} -> ${syncedTask.status}`);
+      if (syncedTask.status !== order.status) {
+        messages.push(`任务 ${order.caichongTaskId} 状态已更新：${order.status} -> ${syncedTask.status}`);
+      }
+    } catch (error) {
+      errorCount += 1;
+      messages.push(`任务 ${order.caichongTaskId} 基础信息同步失败：${getErrorMessage(error)}`);
     }
   }
 
-  return messages;
+  return {
+    messages,
+    errorCount
+  };
 }
 
 export async function syncHeartbeat(user: CurrentUser): Promise<SyncResult> {
@@ -153,37 +166,53 @@ export async function syncHeartbeat(user: CurrentUser): Promise<SyncResult> {
   let page = 1;
   let totalPages = 1;
   let checkedEvents = 0;
+  let eventSyncError: string | undefined;
+  let refreshErrorCount = 0;
 
   if (taskService.account.mode !== "PLATFORM_AGENT") {
-    while (page <= totalPages) {
-      const data = await taskService.service.listEvents({ page, pageSize: 50 });
-      totalPages = data.totalPages || 1;
-      checkedEvents += data.events.length;
+    try {
+      while (page <= totalPages) {
+        const data = await taskService.service.listEvents({ page, pageSize: 50 });
+        totalPages = data.totalPages || 1;
+        checkedEvents += data.events.length;
 
-      for (const event of data.events) {
-        const eventMessages = await handleEvent(event, taskService, (taskId) => findByUserAndTaskId(user, taskId));
-        messages.push(...eventMessages);
-        ackedEventIds.push(event.id);
+        for (const event of data.events) {
+          const eventMessages = await handleEvent(event, taskService, (taskId) => findByUserAndTaskId(user, taskId));
+          messages.push(...eventMessages);
+          ackedEventIds.push(event.id);
+        }
+
+        page += 1;
       }
-
-      page += 1;
+    } catch (error) {
+      eventSyncError = getErrorMessage(error);
+      messages.push(`事件同步失败，已继续按订单刷新：${eventSyncError}`);
     }
 
     if (ackedEventIds.length > 0) {
-      await taskService.service.ackEvents(ackedEventIds);
+      try {
+        await taskService.service.ackEvents(ackedEventIds);
+      } catch (error) {
+        eventSyncError = getErrorMessage(error);
+        messages.push(`事件确认失败，已继续按订单刷新：${eventSyncError}`);
+      }
     }
   }
 
   if (taskService.source === "caichong") {
     const syncableOrders = (await listByUser(user)).filter((order) => isSyncableTaskStatus(order.status));
-    const refreshMessages = await refreshOrders(syncableOrders, taskService);
-    messages.push(...refreshMessages);
+    const refreshed = await refreshOrders(syncableOrders, taskService);
+    refreshErrorCount = refreshed.errorCount;
+    messages.push(...refreshed.messages);
   }
 
   return {
+    ok: !eventSyncError && refreshErrorCount === 0,
     source: taskService.source,
     checkedEvents,
     ackedEventIds,
+    eventSyncError,
+    refreshErrorCount,
     messages
   };
 }
@@ -199,40 +228,58 @@ export async function syncPlatformHeartbeat(): Promise<SyncResult> {
 
   if (syncableOrders.length === 0) {
     return {
+      ok: true,
       source: taskService.source,
       checkedEvents,
       ackedEventIds,
+      refreshErrorCount: 0,
       messages: ["没有进行中的订单，本次自动同步已跳过"]
     };
   }
 
-  while (page <= totalPages) {
-    const data = await taskService.service.listEvents({ page, pageSize: 50 });
-    totalPages = data.totalPages || 1;
-    checkedEvents += data.events.length;
+  let eventSyncError: string | undefined;
+  try {
+    while (page <= totalPages) {
+      const data = await taskService.service.listEvents({ page, pageSize: 50 });
+      totalPages = data.totalPages || 1;
+      checkedEvents += data.events.length;
 
-    for (const event of data.events) {
-      const eventMessages = await handleEvent(event, taskService, findByTaskId);
-      messages.push(...eventMessages);
-      ackedEventIds.push(event.id);
+      for (const event of data.events) {
+        const eventMessages = await handleEvent(event, taskService, findByTaskId);
+        messages.push(...eventMessages);
+        ackedEventIds.push(event.id);
+      }
+
+      page += 1;
     }
-
-    page += 1;
+  } catch (error) {
+    eventSyncError = getErrorMessage(error);
+    messages.push(`事件同步失败，已继续按订单刷新：${eventSyncError}`);
   }
 
   if (ackedEventIds.length > 0) {
-    await taskService.service.ackEvents(ackedEventIds);
+    try {
+      await taskService.service.ackEvents(ackedEventIds);
+    } catch (error) {
+      eventSyncError = getErrorMessage(error);
+      messages.push(`事件确认失败，已继续按订单刷新：${eventSyncError}`);
+    }
   }
 
+  let refreshErrorCount = 0;
   if (taskService.source === "caichong") {
-    const refreshMessages = await refreshOrders(syncableOrders, taskService);
-    messages.push(...refreshMessages);
+    const refreshed = await refreshOrders(syncableOrders, taskService);
+    refreshErrorCount = refreshed.errorCount;
+    messages.push(...refreshed.messages);
   }
 
   return {
+    ok: !eventSyncError && refreshErrorCount === 0,
     source: taskService.source,
     checkedEvents,
     ackedEventIds,
+    eventSyncError,
+    refreshErrorCount,
     messages
   };
 }

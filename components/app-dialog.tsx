@@ -18,6 +18,14 @@ type AppToastProps = {
   message: string | null;
 };
 
+type AppNoticeDialogProps = {
+  open: boolean;
+  title: string;
+  description: ReactNode;
+  confirmLabel?: string;
+  onConfirm: () => void;
+};
+
 export function AppConfirmDialog({
   open,
   title,
@@ -64,6 +72,31 @@ export function AppToast({ message }: AppToastProps) {
     <div className="app-toast" role="status" aria-live="polite">
       {message}
     </div>
+  );
+}
+
+export function AppNoticeDialog({ open, title, description, confirmLabel = "知道了", onConfirm }: AppNoticeDialogProps) {
+  const titleId = useId();
+  const descriptionId = useId();
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <AppModalLayer onDismiss={onConfirm}>
+      <section className="app-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId}>
+        <div className="app-dialog-copy">
+          <h2 id={titleId}>{title}</h2>
+          <p id={descriptionId}>{description}</p>
+        </div>
+        <div className="app-dialog-actions">
+          <button className="app-dialog-button primary" type="button" onClick={onConfirm}>
+            {confirmLabel}
+          </button>
+        </div>
+      </section>
+    </AppModalLayer>
   );
 }
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import { AppConfirmDialog, AppToast } from "@/components/app-dialog";
+import { AppConfirmDialog, AppNoticeDialog, AppToast } from "@/components/app-dialog";
 import type { PublishTask, Submission } from "@/lib/caichong";
 import { classifyMarketTask } from "@/lib/market-classification";
 import type { MarketActivityCategory, MarketActivitySummary, MarketFeedItem, MarketFeedResponse } from "@/lib/market-activity";
@@ -108,6 +108,12 @@ const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const MIN_DESCRIPTION_LENGTH = 10;
 const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+const PAYMENT_LINK_VALID_MS = 30 * 60 * 1000;
+const PAYMENT_POLL_FAST_WINDOW_MS = 2 * 60 * 1000;
+const PAYMENT_POLL_MEDIUM_WINDOW_MS = 10 * 60 * 1000;
+const PAYMENT_POLL_FAST_INTERVAL_MS = 5 * 1000;
+const PAYMENT_POLL_MEDIUM_INTERVAL_MS = 15 * 1000;
+const PAYMENT_POLL_SLOW_INTERVAL_MS = 60 * 1000;
 const COMPOSER_TEXTAREA_MIN_HEIGHT = 52;
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 192;
 const TASK_DESCRIPTION_COLLAPSE_THRESHOLD = 320;
@@ -118,6 +124,139 @@ const ATTACHMENT_RULE_COPY = "支持常见图片、文档、音视频等参考�
 const ATTACHMENT_LIMIT_COPY = "单个附件最大 10MB, 最多 5 个";
 const ATTACHMENT_TOO_MANY_ERROR = `最多上传 ${MAX_ATTACHMENTS} 个附件。如需调整，请先删除已选附件。`;
 const ATTACHMENT_TOO_LARGE_ERROR = "附件最大不能超过 10MB";
+
+function writePaymentBridgePage(paymentWindow: Window) {
+  paymentWindow.document.write(`<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>正在前往付款页面</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        position: relative;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: rgba(246, 255, 247, 0.94);
+        background: linear-gradient(180deg, #07110c 0%, #020705 100%);
+      }
+
+      .payment-bridge {
+        position: absolute;
+        top: 47%;
+        left: 50%;
+        width: min(560px, calc(100vw - 48px));
+        overflow: hidden;
+        padding: 38px 34px 42px;
+        border: 1px solid rgba(125, 201, 143, 0.28);
+        border-radius: 26px;
+        background:
+          linear-gradient(180deg, rgba(31, 55, 38, 0.88), rgba(13, 24, 18, 0.94)),
+          rgba(18, 34, 24, 0.92);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36), 0 0 42px rgba(92, 236, 117, 0.1);
+        transform: translate(-50%, -50%);
+      }
+
+      .payment-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+
+      .payment-brand {
+        display: block;
+        width: 150px;
+        height: 30px;
+        object-fit: contain;
+        margin-bottom: 40px;
+      }
+
+      .payment-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        min-height: 28px;
+        color: #66ec7a;
+        font-size: 15px;
+        font-weight: 500;
+      }
+
+      .payment-spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(218, 233, 219, 0.24);
+        border-top-color: #66ec7a;
+        border-radius: 999px;
+        animation: spin 0.8s linear infinite;
+      }
+
+      h1 {
+        margin: 0 0 14px;
+        color: #f7fff8;
+        font-size: clamp(24px, 5.1vw, 35px);
+        font-weight: 760;
+        line-height: 1.15;
+        letter-spacing: 0;
+      }
+
+      p {
+        max-width: 420px;
+        margin: 18px 0 0;
+        color: rgba(218, 233, 219, 0.72);
+        font-size: 14px;
+        font-weight: 400;
+        line-height: 1.85;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (max-width: 560px) {
+        .payment-bridge {
+          top: 45%;
+          padding: 28px 24px;
+          border-radius: 22px;
+        }
+
+        .payment-brand {
+          width: 136px;
+          height: 27px;
+          margin-bottom: 32px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="payment-bridge" aria-live="polite">
+      <div class="payment-content">
+        <img class="payment-brand" src="/logo.svg" alt="AICHONG" />
+        <h1>正在前往付款页面</h1>
+        <div class="payment-status">
+          <span class="payment-spinner" aria-hidden="true"></span>
+          正在准备安全付款链接
+        </div>
+        <p>请在新打开的页面完成付款。<br />付款完成后，回到 AICHONG 查看任务状态。</p>
+      </div>
+    </main>
+  </body>
+</html>`);
+  paymentWindow.document.close();
+}
 const PENDING_PAYMENT_TASK_STORAGE_KEY = "pendingPaymentTaskId";
 const SUBMISSION_READ_COUNTS_STORAGE_KEY = "aichong:submission-read-counts:v2";
 const IMAGE_FILE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
@@ -136,6 +275,24 @@ const maskPhone = (phone: string) => {
 };
 const formatRefreshTime = (date = new Date()) => date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 const getSubmissionCount = (task: PublishTask) => task.submissionCount || 0;
+const getDateTimeMs = (value?: string) => {
+  if (!value) return null;
+  const date = new Date(value);
+  const time = date.getTime();
+  return Number.isNaN(time) ? null : time;
+};
+const formatPaymentCountdown = (milliseconds: number) => {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+};
+const getPaymentPollDelay = (issuedAt: number) => {
+  const elapsed = Date.now() - issuedAt;
+  if (elapsed < PAYMENT_POLL_FAST_WINDOW_MS) return PAYMENT_POLL_FAST_INTERVAL_MS;
+  if (elapsed < PAYMENT_POLL_MEDIUM_WINDOW_MS) return PAYMENT_POLL_MEDIUM_INTERVAL_MS;
+  return PAYMENT_POLL_SLOW_INTERVAL_MS;
+};
 const getSidebarStatusClassName = (status: string) => {
   if (status === "ACTIVE") {
     return "is-active";
@@ -738,13 +895,7 @@ function getSubmissionNotice(task: PublishTask, visibleSubmissionCount: number) 
       };
     }
 
-    return {
-      tone: "muted" as const,
-      title: "任务已发布，等待投稿",
-      body: deadlineText
-        ? `提交期至 ${deadlineText}。收到投稿后，你可以继续等待，也可以提前采用满意结果。`
-        : "收到投稿后，你可以继续等待，也可以提前采用满意结果。"
-    };
+    return null;
   }
 
   return null;
@@ -981,6 +1132,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [price, setPrice] = useState("");
   const [loginPhone, setLoginPhone] = useState("");
   const [loginCode, setLoginCode] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [tasks, setTasks] = useState<PublishTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -999,7 +1151,6 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isRefreshingPayment, setIsRefreshingPayment] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isPlatformActivityLoading, setIsPlatformActivityLoading] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -1010,6 +1161,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [selectingSubmissionId, setSelectingSubmissionId] = useState<string | null>(null);
   const [attachmentPreviewModal, setAttachmentPreviewModal] = useState<AttachmentPreviewModal | null>(null);
   const [selectConfirmation, setSelectConfirmation] = useState<SelectConfirmation | null>(null);
+  const [isPaymentSuccessNoticeOpen, setIsPaymentSuccessNoticeOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isAttachmentTooltipSuppressed, setIsAttachmentTooltipSuppressed] = useState(false);
   const [previewLoadingUrl, setPreviewLoadingUrl] = useState<string | null>(null);
@@ -1022,7 +1174,8 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isTaskDescriptionExpanded, setIsTaskDescriptionExpanded] = useState(false);
   const [pendingPaymentTaskId, setPendingPaymentTaskId] = useState<string | null>(null);
-  const [pendingPaymentUrl, setPendingPaymentUrl] = useState<string | null>(null);
+  const [paymentLinkIssuedAtByTaskId, setPaymentLinkIssuedAtByTaskId] = useState<Record<string, number>>({});
+  const [paymentNow, setPaymentNow] = useState(() => Date.now());
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [lastDetailLoadedAt, setLastDetailLoadedAt] = useState<string | null>(null);
   const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
@@ -1035,11 +1188,35 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const shouldPublishAfterLoginRef = useRef(false);
   const refreshInFlightRef = useRef(false);
+  const paymentPollInFlightRef = useRef(false);
+  const hasCheckedPendingPaymentRouteRef = useRef(false);
   const selectedTaskIdRef = useRef<string | null>(null);
   const detailRequestSeqRef = useRef(0);
   const [isCompactComposerVisible, setIsCompactComposerVisible] = useState(false);
   const [isCompactComposerExpanded, setIsCompactComposerExpanded] = useState(false);
   const [usesShortCompactPrompt, setUsesShortCompactPrompt] = useState(false);
+
+  useEffect(() => {
+    if (!attachmentPreviewModal || typeof window === "undefined") {
+      return;
+    }
+
+    const { body, documentElement } = document;
+    const previousOverflow = body.style.overflow;
+    const previousPaddingRight = body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - documentElement.clientWidth;
+
+    body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      body.style.overflow = previousOverflow;
+      body.style.paddingRight = previousPaddingRight;
+    };
+  }, [attachmentPreviewModal]);
+
   const canLogin = isPhoneValid(loginPhone) && isCodeValid(loginCode) && !isLoggingIn;
   const canSendCode = isPhoneValid(loginPhone) && !isSendingCode && codeCooldown === 0;
   const isPhoneLoggedIn = currentUser?.authMode === "phone";
@@ -1050,7 +1227,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const shouldShowComposerValidationError = shouldShowDescriptionError || shouldShowPriceError || shouldShowAttachmentError;
   const descriptionLength = description.trim().length;
   const shouldPausePlatformActivity = isComposerFocused || descriptionLength > 0;
-  const visibleTasks = tasks.filter((task) => task.status !== "PENDING_PAYMENT");
+  const visibleTasks = tasks;
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
   const shouldShowSidebarOrders = Boolean(isPhoneLoggedIn && hasLoadedTasks && visibleTasks.length > 0);
   const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
@@ -1067,6 +1244,19 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const refreshMetaText = isSyncing
     ? "正在同步"
     : autoRefreshError || (lastRefreshAt ? `已同步 ${lastRefreshAt}` : lastDetailLoadedAt ? `已加载 ${lastDetailLoadedAt}` : "读取中");
+  const shouldShowDetailLoadingState = Boolean(selectedTaskId && (isDetailLoading || (!selectedTask && !error)));
+  const selectedPaymentLinkIssuedAt =
+    selectedTask?.status === "PENDING_PAYMENT"
+      ? paymentLinkIssuedAtByTaskId[selectedTask.taskId] || getDateTimeMs(selectedTask.createdAt)
+      : null;
+  const selectedPaymentLinkExpiresAt =
+    selectedTask?.status === "PENDING_PAYMENT" && selectedPaymentLinkIssuedAt ? selectedPaymentLinkIssuedAt + PAYMENT_LINK_VALID_MS : null;
+  const selectedPaymentCountdownMs = selectedPaymentLinkExpiresAt ? selectedPaymentLinkExpiresAt - paymentNow : 0;
+  const isSelectedPaymentLinkExpired = selectedTask?.status === "PENDING_PAYMENT" && Boolean(selectedPaymentLinkExpiresAt) && selectedPaymentCountdownMs <= 0;
+  const selectedPaymentCountdownText =
+    selectedTask?.status === "PENDING_PAYMENT" && !isSelectedPaymentLinkExpired && selectedPaymentLinkExpiresAt
+      ? formatPaymentCountdown(selectedPaymentCountdownMs)
+      : "";
 
   function resizeDescriptionTextarea() {
     const textarea = descriptionTextareaRef.current;
@@ -1097,6 +1287,27 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
 
   function showToast(messageText: string) {
     setToastMessage(messageText);
+  }
+
+  function resetLoginForm({ clearPhone = false }: { clearPhone?: boolean } = {}) {
+    if (clearPhone) {
+      setLoginPhone("");
+    }
+    setLoginCode("");
+    setLoginError(null);
+    setCodeCooldown(0);
+  }
+
+  function openLoginModal() {
+    resetLoginForm();
+    setError(null);
+    setMessage(null);
+    setIsLoginOpen(true);
+  }
+
+  function closeLoginModal() {
+    resetLoginForm();
+    setIsLoginOpen(false);
   }
 
   function initializeSubmissionReadCountsIfNeeded(nextTasks: PublishTask[]) {
@@ -1154,9 +1365,18 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   }
 
   function updateSelectedTask(taskId: string | null) {
+    selectedTaskIdRef.current = taskId;
+    if (!taskId) {
+      detailRequestSeqRef.current += 1;
+      setIsDetailLoading(false);
+    }
+
     if (taskId !== selectedTaskId) {
       setSelectedTask(null);
       setSubmissions([]);
+      if (taskId) {
+        setIsDetailLoading(true);
+      }
     }
     setSelectedTaskId(taskId);
 
@@ -1217,6 +1437,17 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
   }
 
+  function mergeTaskIntoList(nextTask: PublishTask) {
+    setTasks((currentTasks) => {
+      const hasTask = currentTasks.some((task) => task.taskId === nextTask.taskId);
+      if (!hasTask) {
+        return [nextTask, ...currentTasks];
+      }
+
+      return currentTasks.map((task) => (task.taskId === nextTask.taskId ? { ...task, ...nextTask } : task));
+    });
+  }
+
   async function loadCurrentUser() {
     setIsAuthLoading(true);
     try {
@@ -1259,7 +1490,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
   }
 
-  async function loadTaskDetail(taskId: string, options: { showLoading?: boolean; markRead?: boolean } = {}) {
+  async function loadTaskDetail(taskId: string, options: { showLoading?: boolean; markRead?: boolean } = {}): Promise<PublishTask | null> {
     const requestSeq = detailRequestSeqRef.current + 1;
     detailRequestSeqRef.current = requestSeq;
     const shouldShowLoading = options.showLoading ?? !selectedTask;
@@ -1272,15 +1503,16 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     try {
       const task = await readJson<PublishTask>(await fetch(`/api/tasks/${taskId}`));
       if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
-        return;
+        return null;
       }
 
       setSelectedTask(task);
+      mergeTaskIntoList(task);
 
       try {
         const submissionData = await readJson<{ submissions?: Submission[] } | Submission[]>(await fetch(`/api/tasks/${taskId}/submissions`));
         if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
-          return;
+          return null;
         }
 
         const nextSubmissions = Array.isArray(submissionData) ? submissionData : submissionData.submissions || [];
@@ -1290,7 +1522,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         }
       } catch {
         if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
-          return;
+          return null;
         }
 
         setSubmissions([]);
@@ -1301,14 +1533,16 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
 
       setAutoRefreshError(null);
       setLastDetailLoadedAt(formatRefreshTime());
+      return task;
     } catch (detailError) {
       if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
-        return;
+        return null;
       }
 
       setError(detailError instanceof Error ? detailError.message : "订单详情读取失败");
       setSelectedTask(null);
       setSubmissions([]);
+      return null;
     } finally {
       if (detailRequestSeqRef.current === requestSeq && selectedTaskIdRef.current === taskId) {
         if (shouldShowLoading) {
@@ -1318,7 +1552,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
   }
 
-  async function refreshPaymentUrl(taskId: string) {
+  async function refreshPaymentUrl(taskId: string, options: { silent?: boolean } = {}) {
     setIsRefreshingPayment(true);
     setMessage(null);
     setError(null);
@@ -1331,7 +1565,10 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       );
 
       setSelectedTask((task) => (task ? { ...task, paymentUrl: data.paymentUrl } : task));
-      setMessage("付款入口已刷新。");
+      setPaymentLinkIssuedAtByTaskId((current) => ({ ...current, [taskId]: Date.now() }));
+      if (!options.silent) {
+        setMessage("付款入口已刷新。");
+      }
       return data.paymentUrl;
     } catch (paymentError) {
       setError(paymentError instanceof Error ? paymentError.message : "付款入口刷新失败");
@@ -1504,52 +1741,56 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
   }
 
-  async function confirmPaymentComplete() {
-    if (!pendingPaymentTaskId) {
+  async function reopenPaymentForSelectedTask() {
+    if (!selectedTask || selectedTask.status !== "PENDING_PAYMENT") {
       return;
     }
 
-    setIsConfirmingPayment(true);
+    let paymentWindow: Window | null = null;
+    try {
+      paymentWindow = window.open("", "_blank");
+      if (paymentWindow) {
+        writePaymentBridgePage(paymentWindow);
+      }
+    } catch {
+      paymentWindow = null;
+    }
+
     setMessage(null);
     setError(null);
 
     try {
-      await readJson<{ checkedEvents: number; messages: string[] }>(
-        await fetch("/api/sync/heartbeat", {
-          method: "POST"
-        })
-      );
-
-      const nextTasks = await loadTasks();
-      const paidTask = nextTasks.find((task) => task.taskId === pendingPaymentTaskId && task.status !== "PENDING_PAYMENT");
-
-      if (!paidTask) {
-        setMessage("暂时还没有检测到付款完成，请稍后再试。");
-        return;
+      let nextPaymentUrl = selectedTask.paymentUrl;
+      if (!nextPaymentUrl || isSelectedPaymentLinkExpired) {
+        nextPaymentUrl = (await refreshPaymentUrl(selectedTask.taskId, { silent: true })) || undefined;
       }
 
-      window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
-      setPendingPaymentTaskId(null);
-      setPendingPaymentUrl(null);
-      setMessage("付款已完成，任务已发布。");
-      await loadPlatformActivity();
-      updateSelectedTask(paidTask.taskId);
-    } catch (confirmError) {
-      setError(confirmError instanceof Error ? confirmError.message : "付款状态刷新失败");
-    } finally {
-      setIsConfirmingPayment(false);
+      if (!nextPaymentUrl) {
+        throw new Error("付款页面暂时没有打开，请稍后重试。");
+      }
+
+      setPendingPaymentTaskId(selectedTask.taskId);
+      window.sessionStorage.setItem(PENDING_PAYMENT_TASK_STORAGE_KEY, selectedTask.taskId);
+
+      if (paymentWindow) {
+        paymentWindow.location.href = nextPaymentUrl;
+      } else {
+        window.open(nextPaymentUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (paymentError) {
+      paymentWindow?.close();
+      setError(paymentError instanceof Error ? paymentError.message : "付款入口打开失败");
     }
   }
 
   async function sendLoginCode() {
     if (!isPhoneValid(loginPhone)) {
-      setError("请输入 11 位中国大陆手机号");
+      setLoginError("请输入 11 位中国大陆手机号");
       return;
     }
 
     setIsSendingCode(true);
-    setMessage(null);
-    setError(null);
+    setLoginError(null);
 
     try {
       await readJson<{ ok: boolean; message?: string }>(
@@ -1563,10 +1804,9 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
           })
         })
       );
-      setMessage("验证码已发送，请查看短信。");
       setCodeCooldown(60);
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "验证码发送失败");
+      setLoginError(sendError instanceof Error ? sendError.message : "验证码发送失败");
     } finally {
       setIsSendingCode(false);
     }
@@ -1575,16 +1815,17 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   async function loginWithPhoneCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!isPhoneValid(loginPhone)) {
-      setError("请输入 11 位中国大陆手机号");
+      setLoginError("请输入 11 位中国大陆手机号");
       return;
     }
 
     if (!isCodeValid(loginCode)) {
-      setError("请输入 6 位数字验证码");
+      setLoginError("请输入 6 位数字验证码");
       return;
     }
 
     setIsLoggingIn(true);
+    setLoginError(null);
     setMessage(null);
     setError(null);
 
@@ -1608,6 +1849,11 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       setIsAuthLoading(false);
       setMessage(null);
       setIsLoginOpen(false);
+      setLoginPhone(user.phone);
+      setLoginCode("");
+      setLoginError(null);
+      setCodeCooldown(0);
+      updateSelectedTask(null);
       const shouldPublishAfterLogin = shouldPublishAfterLoginRef.current;
       shouldPublishAfterLoginRef.current = false;
 
@@ -1617,24 +1863,37 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         await loadTasks();
       }
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : "登录失败");
+      setLoginError(loginError instanceof Error ? loginError.message : "登录失败");
     } finally {
       setIsLoggingIn(false);
     }
   }
 
   async function logout() {
+    const previousPhone = currentUser?.phone || loginPhone;
     await fetch("/api/auth/logout", {
       method: "POST"
     });
+    window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
+    detailRequestSeqRef.current += 1;
+    selectedTaskIdRef.current = null;
+    shouldPublishAfterLoginRef.current = false;
     setCurrentUser(null);
     setTasks([]);
     setHasLoadedTasks(false);
     updateSelectedTask(null);
     setSelectedTask(null);
     setSubmissions([]);
+    setPendingPaymentTaskId(null);
+    setPaymentLinkIssuedAtByTaskId({});
+    setIsPaymentSuccessNoticeOpen(false);
+    setIsLoginOpen(false);
+    setIsAccountMenuOpen(false);
+    setMessage(null);
+    setError(null);
+    resetLoginForm();
+    setLoginPhone(previousPhone);
     await loadCurrentUser();
-    await loadTasks();
   }
 
   function addAttachments(files: FileList | null) {
@@ -1720,7 +1979,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       shouldPublishAfterLoginRef.current = true;
       setError(null);
       setMessage(null);
-      setIsLoginOpen(true);
+      openLoginModal();
       return;
     }
 
@@ -1744,7 +2003,9 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     let paymentWindow: Window | null = null;
     try {
       paymentWindow = window.open("", "_blank");
-      paymentWindow?.document.write("<title>正在打开付款页面</title><p style=\"font-family: sans-serif; padding: 24px;\">正在打开付款页面...</p>");
+      if (paymentWindow) {
+        writePaymentBridgePage(paymentWindow);
+      }
     } catch {
       paymentWindow = null;
     }
@@ -1781,12 +2042,12 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       }
 
       window.sessionStorage.setItem(PENDING_PAYMENT_TASK_STORAGE_KEY, task.taskId);
-      updateSelectedTask(null);
-      setSelectedTask(null);
+      setPaymentLinkIssuedAtByTaskId((current) => ({ ...current, [task.taskId]: Date.now() }));
+      updateSelectedTask(task.taskId);
+      setSelectedTask({ ...task, paymentUrl });
       setSubmissions([]);
       setPendingPaymentTaskId(task.taskId);
-      setPendingPaymentUrl(paymentUrl);
-      setMessage("任务已创建，付款页面已打开。完成付款后请回到这里查看任务。");
+      setMessage(null);
       setDescription("");
       setAttachments([]);
       await loadTasks();
@@ -1915,13 +2176,23 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   useEffect(() => {
     const taskIdFromUrl = new URLSearchParams(window.location.search).get("task");
     if (taskIdFromUrl) {
+      selectedTaskIdRef.current = taskIdFromUrl;
+      setIsDetailLoading(true);
       setSelectedTaskId(taskIdFromUrl);
     }
     setHasResolvedInitialRoute(true);
   }, []);
 
   useEffect(() => {
+    if (!isAuthLoading && !isPhoneLoggedIn && selectedTaskId) {
+      updateSelectedTask(null);
+      return;
+    }
+
     if (selectedTaskId) {
+      if (!isPhoneLoggedIn) {
+        return;
+      }
       selectedTaskIdRef.current = selectedTaskId;
       loadTaskDetail(selectedTaskId);
     } else {
@@ -1932,10 +2203,99 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       setIsDetailLoading(false);
       setLastDetailLoadedAt(null);
     }
-  }, [selectedTaskId]);
+  }, [isAuthLoading, isPhoneLoggedIn, selectedTaskId]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || selectedTaskId) {
+    if (selectedTask?.status !== "PENDING_PAYMENT") {
+      return;
+    }
+
+    const timer = window.setInterval(() => setPaymentNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [selectedTask?.taskId, selectedTask?.status]);
+
+  useEffect(() => {
+    if (!selectedTask || selectedTask.status === "PENDING_PAYMENT" || pendingPaymentTaskId !== selectedTask.taskId) {
+      return;
+    }
+
+    window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
+    setPendingPaymentTaskId(null);
+    setPaymentLinkIssuedAtByTaskId((current) => {
+      const { [selectedTask.taskId]: _removed, ...rest } = current;
+      return rest;
+    });
+
+    if (selectedTask.status === "ACTIVE") {
+      setIsPaymentSuccessNoticeOpen(true);
+    }
+  }, [pendingPaymentTaskId, selectedTask]);
+
+  useEffect(() => {
+    if (!selectedTask || selectedTask.status !== "PENDING_PAYMENT" || !selectedPaymentLinkIssuedAt || isSelectedPaymentLinkExpired) {
+      return;
+    }
+
+    const issuedAt = selectedPaymentLinkIssuedAt;
+    const taskId = selectedTask.taskId;
+    let timer: number | null = null;
+    let cancelled = false;
+
+    async function pollPaymentStatus() {
+      if (cancelled || !selectedTaskIdRef.current || Date.now() >= issuedAt + PAYMENT_LINK_VALID_MS) {
+        return;
+      }
+
+      if (typeof document !== "undefined" && document.hidden) {
+        timer = window.setTimeout(pollPaymentStatus, PAYMENT_POLL_MEDIUM_INTERVAL_MS);
+        return;
+      }
+
+      if (paymentPollInFlightRef.current) {
+        timer = window.setTimeout(pollPaymentStatus, getPaymentPollDelay(issuedAt));
+        return;
+      }
+
+      paymentPollInFlightRef.current = true;
+      try {
+        const latestTask = await loadTaskDetail(taskId, { showLoading: false, markRead: false });
+        if (!latestTask || cancelled) {
+          return;
+        }
+
+        if (latestTask.status !== "PENDING_PAYMENT") {
+          await loadTasks();
+          mergeTaskIntoList(latestTask);
+          if (latestTask.status === "ACTIVE") {
+            setIsPaymentSuccessNoticeOpen(true);
+          }
+          return;
+        }
+      } finally {
+        paymentPollInFlightRef.current = false;
+      }
+
+      if (!cancelled) {
+        timer = window.setTimeout(pollPaymentStatus, getPaymentPollDelay(issuedAt));
+      }
+    }
+
+    timer = window.setTimeout(pollPaymentStatus, getPaymentPollDelay(issuedAt));
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [isSelectedPaymentLinkExpired, selectedPaymentLinkIssuedAt, selectedTask?.status, selectedTask?.taskId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isPhoneLoggedIn || !hasResolvedInitialRoute || hasCheckedPendingPaymentRouteRef.current) {
+      return;
+    }
+
+    hasCheckedPendingPaymentRouteRef.current = true;
+    if (selectedTaskId) {
       return;
     }
 
@@ -1944,16 +2304,9 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       return;
     }
 
-    const paidTask = visibleTasks.find((task) => task.taskId === pendingTaskId);
-    if (!paidTask) {
-      return;
-    }
-
-    window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
-    setPendingPaymentTaskId(null);
-    setPendingPaymentUrl(null);
     updateSelectedTask(pendingTaskId);
-  }, [selectedTaskId, visibleTasks]);
+    setPendingPaymentTaskId(pendingTaskId);
+  }, [hasResolvedInitialRoute, isPhoneLoggedIn, selectedTaskId]);
 
   useEffect(() => {
     if (!isPhoneLoggedIn || !hasCurrentUserSyncableTasks) {
@@ -2039,12 +2392,27 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         }}
       />
 
+      <AppNoticeDialog
+        open={isPaymentSuccessNoticeOpen}
+        title="恭喜发布成功"
+        description={
+          <>
+            付款完成，任务已成功进入提交期。
+            <br />
+            您可以坐等创作者的投稿啦。
+          </>
+        }
+        confirmLabel="知道了"
+        onConfirm={() => setIsPaymentSuccessNoticeOpen(false)}
+      />
+
       {isMenuOpen ? <button className="drawer-backdrop" aria-label="关闭菜单" type="button" onClick={() => setIsMenuOpen(false)} /> : null}
 
       <aside className={`studio-sidebar ${isMenuOpen ? "open" : ""}`}>
         <div className="studio-brand-block">
           <Link
             className="studio-brand"
+            data-sidebar-tooltip="首页"
             href="/"
             onClick={() => {
               updateSelectedTask(null);
@@ -2057,6 +2425,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
           <button
             aria-label={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
             className="sidebar-collapse-button"
+            data-sidebar-tooltip={isSidebarCollapsed ? "展开侧栏" : undefined}
             type="button"
             onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
           >
@@ -2070,6 +2439,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         <nav className="studio-menu">
           <button
             className={!selectedTaskId ? "active" : ""}
+            data-sidebar-tooltip="发布新任务"
             type="button"
             onClick={() => {
               updateSelectedTask(null);
@@ -2144,13 +2514,13 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         )}
 
         <nav className="studio-bottom-links">
-          <Link href="/market-rules" target="_blank" rel="noreferrer" onClick={() => setIsMenuOpen(false)}>
+          <Link href="/market-rules" target="_blank" rel="noreferrer" data-sidebar-tooltip="市场规则" onClick={() => setIsMenuOpen(false)}>
             <span className="nav-icon-slot">
               <Icon name="rules" />
             </span>
             <span className="sidebar-label">市场规则</span>
           </Link>
-          <Link href="/work" target="_blank" rel="noreferrer" onClick={() => setIsMenuOpen(false)}>
+          <Link href="/work" target="_blank" rel="noreferrer" data-sidebar-tooltip="我要接单" onClick={() => setIsMenuOpen(false)}>
             <span className="nav-icon-slot">
               <Icon name="work" />
             </span>
@@ -2169,7 +2539,12 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                   </button>
                 </div>
               ) : null}
-              <button className="account-trigger" type="button" onClick={() => setIsAccountMenuOpen((open) => !open)}>
+              <button
+                className="account-trigger"
+                data-sidebar-tooltip={maskPhone(currentUser.phone)}
+                type="button"
+                onClick={() => setIsAccountMenuOpen((open) => !open)}
+              >
                 <span className="nav-icon-slot">
                   <Icon name="user" />
                 </span>
@@ -2184,36 +2559,65 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       </aside>
 
       {!isAuthLoading && !isPhoneLoggedIn ? (
-        <button className="studio-login-button" type="button" onClick={() => setIsLoginOpen((open) => !open)}>
+        <button
+          className="studio-login-button"
+          type="button"
+          onClick={() => {
+            if (isLoginOpen) {
+              closeLoginModal();
+            } else {
+              openLoginModal();
+            }
+          }}
+        >
           登录/注册
         </button>
       ) : null}
 
       {isLoginOpen && !isPhoneLoggedIn ? (
         <div className="modal-layer">
-          <button className="modal-backdrop login-backdrop" aria-label="关闭登录弹窗" type="button" onClick={() => setIsLoginOpen(false)} />
+          <div className="modal-backdrop login-backdrop" aria-hidden="true" />
           <section className="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
             <div className="modal-header">
               <div>
                 <h2 id="login-title">登录/注册</h2>
                 <p>登录后可以发布任务、查看投稿和历史任务。</p>
               </div>
-              <button aria-label="关闭登录弹窗" type="button" onClick={() => setIsLoginOpen(false)}>
+              <button aria-label="关闭登录弹窗" type="button" onClick={closeLoginModal}>
                 <Icon name="close" />
               </button>
             </div>
             <form className="modal-login-form" onSubmit={loginWithPhoneCode}>
               <label>
                 手机号
-                <input
-                  aria-label="手机号"
-                  maxLength={11}
-                  inputMode="tel"
-                  placeholder="请输入手机号"
-                  value={loginPhone}
-                  onChange={(event) => setLoginPhone(event.target.value.replace(/\D/g, "").slice(0, 11))}
-                  required
-                />
+                <span className="phone-input-wrap">
+                  <input
+                    aria-label="手机号"
+                    maxLength={11}
+                    inputMode="tel"
+                    placeholder="请输入手机号"
+                    value={loginPhone}
+                    onChange={(event) => {
+                      setLoginPhone(event.target.value.replace(/\D/g, "").slice(0, 11));
+                      setLoginCode("");
+                      setLoginError(null);
+                      setCodeCooldown(0);
+                    }}
+                    required
+                  />
+                  {loginPhone ? (
+                    <button
+                      className="phone-clear-button"
+                      aria-label="清空手机号"
+                      type="button"
+                      onClick={() => {
+                        resetLoginForm({ clearPhone: true });
+                      }}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </span>
               </label>
               <label>
                 验证码
@@ -2224,14 +2628,18 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                     inputMode="numeric"
                     placeholder="请输入验证码"
                     value={loginCode}
-                    onChange={(event) => setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onChange={(event) => {
+                      setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+                      setLoginError(null);
+                    }}
                     required
                   />
                   <button type="button" onClick={sendLoginCode} disabled={!canSendCode}>
-                    {isSendingCode ? "发送中" : codeCooldown > 0 ? `${codeCooldown}s` : "获取验证码"}
+                    {isSendingCode ? "发送中" : codeCooldown > 0 ? `${codeCooldown}s后重新发送` : "获取验证码"}
                   </button>
                 </span>
               </label>
+              {loginError ? <div className="login-inline-message error">{loginError}</div> : null}
               <button className="btn primary" disabled={!canLogin} type="submit">
                 {isLoggingIn ? "登录中" : "登录"}
               </button>
@@ -2432,23 +2840,6 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                         </button>
                       </div>
 
-                      {pendingPaymentTaskId && pendingPaymentUrl ? (
-                        <div className="payment-wait-card">
-                          <div>
-                            <strong>请先完成付款</strong>
-                            <span>付款完成后回到这里，刷新状态即可看到任务详情。</span>
-                          </div>
-                          <div className="payment-wait-actions">
-                            <a href={pendingPaymentUrl} target="_blank" rel="noreferrer">
-                              重新打开付款页
-                            </a>
-                            <button type="button" onClick={confirmPaymentComplete} disabled={isConfirmingPayment}>
-                              {isConfirmingPayment ? "刷新中" : "我已完成付款"}
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
-
                       {uploadProgressText ? <div className="message neutral">{uploadProgressText}</div> : null}
                       {message ? <div className="message neutral">{message}</div> : null}
                       {error && !shouldShowComposerValidationError ? <div className="message error">{error}</div> : null}
@@ -2488,7 +2879,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         ) : (
           <section className="detail-stage">
               <div className="content-body">
-                {isDetailLoading ? (
+                {shouldShowDetailLoadingState ? (
                   <div className="detail-loading-state" role="status" aria-label="正在读取任务详情和交付结果">
                     <HeartbeatLoadingIcon />
                   </div>
@@ -2542,7 +2933,6 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                           <>
                             <span className="task-detail-time-text">创建时间 {formatDateTimeToMinute(selectedTask.createdAt)}</span>
                             <span className="task-detail-time-text">付款截止 {formatDateTimeToMinute(addHoursToDateTime(selectedTask.createdAt, 24))}</span>
-                            <span className="task-detail-time-text">支付链接有效 30 分钟，可刷新</span>
                           </>
                         ) : null}
                         {selectedTask.status === "ACTIVE" && (selectedTask.paidAt || selectedTask.createdAt) ? (
@@ -2598,12 +2988,22 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                         </div>
                       ) : null}
 
-                      {selectedTask.paymentUrl && selectedTask.status === "PENDING_PAYMENT" ? (
-                        <div className="payment-box">
-                          <span>付款入口</span>
-                          <a href={selectedTask.paymentUrl} target="_blank" rel="noreferrer">
-                            去付款
-                          </a>
+                      {selectedTask.status === "PENDING_PAYMENT" ? (
+                        <div className={`payment-status-panel ${isSelectedPaymentLinkExpired ? "expired" : ""}`} role="status">
+                          <div className="payment-status-copy">
+                            <strong>
+                              {isSelectedPaymentLinkExpired ? "支付已超时" : "等待付款完成"}
+                              {selectedPaymentCountdownText ? <span>{selectedPaymentCountdownText}</span> : null}
+                            </strong>
+                            <p>
+                              {isSelectedPaymentLinkExpired
+                                ? "支付链接已超时，请重新支付。"
+                                : "付款完成后，将自动更新任务状态。如付款失败，可重新支付。"}
+                            </p>
+                          </div>
+                          <button className="payment-status-action" type="button" onClick={reopenPaymentForSelectedTask} disabled={isRefreshingPayment}>
+                            {isRefreshingPayment ? "处理中" : "重新支付"}
+                          </button>
                         </div>
                       ) : null}
                     </div>

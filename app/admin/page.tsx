@@ -133,6 +133,17 @@ export default async function AdminPage() {
       return 0;
     })
     .slice(0, 5);
+  const adminNavItems = [
+    { href: "#overview", label: "概览", meta: `${summary.totalOrders} 单` },
+    { href: "#readiness", label: "上线检查", meta: readiness.ready ? "正常" : "待处理" },
+    { href: "#users", label: "用户列表", meta: `${users.length} 人` },
+    { href: "#selection-reminders", label: "采用提醒", meta: `${selectionReminderOrders.length} 条` },
+    { href: "#sms-reminders", label: "短信记录", meta: `${smsReminders.length} 条` },
+    { href: "#action-orders", label: "需要处理", meta: `${actionOrders.length} 条` },
+    { href: "#orders", label: "全部订单", meta: `${orders.length} 条` },
+    { href: "#status-rules", label: "状态规则", meta: `${taskStatusRules.length} 项` },
+    { href: "#logs", label: "异常日志", meta: `${operationLogs.length} 条` }
+  ];
 
   return (
     <main className="page-shell admin-shell">
@@ -141,339 +152,358 @@ export default async function AdminPage() {
           <h1>运营后台</h1>
           <p>{user.phone} 正在查看平台全部订单，适合排查付款、投稿和结算状态。</p>
         </div>
-        <Link className="btn secondary link-button" href="/">
+        <Link className="btn secondary link-button" href="/" target="_blank" rel="noreferrer">
           返回工作台
         </Link>
       </header>
 
-      <section className="panel admin-action-bar">
-        <div>
-          <strong>后台同步</strong>
-          <p>手动触发一次平台级心跳，检查全部待处理订单和才虫事件。</p>
-        </div>
-        <form action={runPlatformHeartbeat}>
-          <button className="btn primary" type="submit">
-            立即同步全部订单
-          </button>
-        </form>
-      </section>
+      <div className="admin-layout">
+        <aside className="admin-sidebar" aria-label="后台菜单">
+          <div className="admin-sidebar-heading">
+            <strong>后台菜单</strong>
+            <span>快速定位数据模块</span>
+          </div>
+          <nav className="admin-nav">
+            {adminNavItems.map((item) => (
+              <a className="admin-nav-link" href={item.href} key={item.href}>
+                <span>{item.label}</span>
+                <small>{item.meta}</small>
+              </a>
+            ))}
+          </nav>
+        </aside>
 
-      <section className="panel admin-panel readiness-panel">
-        <div className="panel-header">
-          <h2>上线健康检查</h2>
-          <p>{readiness.ready ? "关键配置已准备好。" : "还有配置项需要处理，完成后再正式对外上线。"}</p>
-        </div>
-        <div className="readiness-grid">
-          {readiness.items.map((item) => (
-            <article className={`readiness-item ${item.ok ? "ok" : "warn"}`} key={item.key}>
-              <div className="readiness-title">
-                <strong>{item.label}</strong>
-                <span>{item.ok ? "正常" : "待处理"}</span>
-              </div>
-              <p>{item.detail}</p>
-              {!item.ok && item.action ? <small>{item.action}</small> : null}
-            </article>
-          ))}
-        </div>
-      </section>
+        <div className="admin-content">
+          <section className="panel admin-action-bar" id="overview">
+            <div>
+              <strong>后台同步</strong>
+              <p>手动触发一次平台级心跳，检查全部待处理订单和才虫事件。</p>
+            </div>
+            <form action={runPlatformHeartbeat}>
+              <button className="btn primary" type="submit">
+                立即同步全部订单
+              </button>
+            </form>
+          </section>
 
-      <section className="admin-metrics">
-        <div className="metric-card">
-          <span>真实用户</span>
-          <strong>{users.length}</strong>
-        </div>
-        <div className="metric-card">
-          <span>真实订单</span>
-          <strong>{summary.totalOrders}</strong>
-        </div>
-        <div className="metric-card">
-          <span>总金额</span>
-          <strong>¥{summary.totalAmount.toFixed(2)}</strong>
-        </div>
-        <div className="metric-card">
-          <span>待支付</span>
-          <strong>{summary.pendingPayment}</strong>
-        </div>
-        <div className="metric-card">
-          <span>进行中</span>
-          <strong>{summary.active}</strong>
-        </div>
-        <div className="metric-card">
-          <span>待选择</span>
-          <strong>{summary.pendingSelection}</strong>
-        </div>
-        <div className="metric-card urgent-metric-card">
-          <span>需提醒用户</span>
-          <strong>{selectionReminderOrders.length}</strong>
-        </div>
-        <div className="metric-card">
-          <span>已完成</span>
-          <strong>{summary.completed}</strong>
-        </div>
-        <div className="metric-card">
-          <span>旧测试单</span>
-          <strong>{summary.legacyOrders}</strong>
-        </div>
-      </section>
+          <section className="admin-metrics" aria-label="后台概览指标">
+            <div className="metric-card">
+              <span>真实用户</span>
+              <strong>{users.length}</strong>
+            </div>
+            <div className="metric-card">
+              <span>真实订单</span>
+              <strong>{summary.totalOrders}</strong>
+            </div>
+            <div className="metric-card">
+              <span>总金额</span>
+              <strong>¥{summary.totalAmount.toFixed(2)}</strong>
+            </div>
+            <div className="metric-card">
+              <span>待支付</span>
+              <strong>{summary.pendingPayment}</strong>
+            </div>
+            <div className="metric-card">
+              <span>进行中</span>
+              <strong>{summary.active}</strong>
+            </div>
+            <div className="metric-card">
+              <span>待选择</span>
+              <strong>{summary.pendingSelection}</strong>
+            </div>
+            <div className="metric-card urgent-metric-card">
+              <span>需提醒用户</span>
+              <strong>{selectionReminderOrders.length}</strong>
+            </div>
+            <div className="metric-card">
+              <span>已完成</span>
+              <strong>{summary.completed}</strong>
+            </div>
+            <div className="metric-card">
+              <span>旧测试单</span>
+              <strong>{summary.legacyOrders}</strong>
+            </div>
+          </section>
 
-      <section className="panel admin-panel admin-users-panel">
-        <div className="panel-header">
-          <h2>用户列表</h2>
-          <p>查看真实用户的手机号、注册时间、最近登录时间和发单数量；测试账号不计入统计。</p>
-        </div>
+          <section className="panel admin-panel readiness-panel" id="readiness">
+            <div className="panel-header">
+              <h2>上线健康检查</h2>
+              <p>{readiness.ready ? "关键配置已准备好。" : "还有配置项需要处理，完成后再正式对外上线。"}</p>
+            </div>
+            <div className="readiness-grid">
+              {readiness.items.map((item) => (
+                <article className={`readiness-item ${item.ok ? "ok" : "warn"}`} key={item.key}>
+                  <div className="readiness-title">
+                    <strong>{item.label}</strong>
+                    <span>{item.ok ? "正常" : "待处理"}</span>
+                  </div>
+                  <p>{item.detail}</p>
+                  {!item.ok && item.action ? <small>{item.action}</small> : null}
+                </article>
+              ))}
+            </div>
+          </section>
 
-        <div className="admin-table-wrap">
-          {users.length > 0 ? (
-            <table className="admin-table admin-users-table">
-              <thead>
-                <tr>
-                  <th>手机号</th>
-                  <th>注册时间</th>
-                  <th>最近登录</th>
-                  <th>发单数量</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((adminUser) => (
-                  <tr key={adminUser.id}>
-                    <td>
-                      <strong>{adminUser.phone || "-"}</strong>
-                      {adminUser.displayName ? <span>{adminUser.displayName}</span> : null}
-                    </td>
-                    <td>{formatDate(adminUser.createdAt)}</td>
-                    <td>{formatDate(adminUser.lastLoginAt)}</td>
-                    <td>{adminUser.orderCount}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="empty-state">还没有用户数据。</div>
-          )}
-        </div>
-      </section>
+          <section className="panel admin-panel admin-users-panel" id="users">
+            <div className="panel-header">
+              <h2>用户列表</h2>
+              <p>查看真实用户的手机号、注册时间、最近登录时间和发单数量；测试账号不计入统计。</p>
+            </div>
 
-      <section className="panel admin-panel selection-reminder-panel">
-        <div className="panel-header">
-          <h2>采用提醒兜底</h2>
-          <p>才虫生命周期短信会发给平台代理身份；这里列出需要运营主动提醒用户采用投稿的真实订单。</p>
-        </div>
+            <div className="admin-table-wrap">
+              {users.length > 0 ? (
+                <table className="admin-table admin-users-table">
+                  <thead>
+                    <tr>
+                      <th>手机号</th>
+                      <th>注册时间</th>
+                      <th>最近登录</th>
+                      <th>发单数量</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((adminUser) => (
+                      <tr key={adminUser.id}>
+                        <td>
+                          <strong>{adminUser.phone || "-"}</strong>
+                          {adminUser.displayName ? <span>{adminUser.displayName}</span> : null}
+                        </td>
+                        <td>{formatDate(adminUser.createdAt)}</td>
+                        <td>{formatDate(adminUser.lastLoginAt)}</td>
+                        <td>{adminUser.orderCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="empty-state">还没有用户数据。</div>
+              )}
+            </div>
+          </section>
 
-        <div className="action-orders">
-          {selectionReminderOrders.length > 0 ? (
-            selectionReminderOrders.slice(0, 8).map((order) => (
-              <article className={`action-order selection-alert ${getSelectionReminderLevel(order)}`} key={order.id}>
-                <div>
-                  <strong>需要提醒用户采用投稿</strong>
-                  <p>{order.description}</p>
-                  <span>用户 {order.userPhone || order.userId}</span>
-                  <span>截止 {formatDate(order.deadlineAt)}</span>
-                  <span>ID {order.caichongTaskId}</span>
-                </div>
-                <div className="action-order-meta">
-                  <span className="chip danger-chip">{getSelectionReminderCopy(order)}</span>
-                  <span className="chip">投稿 {order.submissionCount}</span>
-                  <span className="chip">¥{order.price.toFixed(2)}</span>
-                </div>
-              </article>
-            ))
-          ) : (
-            <div className="empty-state">当前没有进入选择期的真实订单。</div>
-          )}
-        </div>
-      </section>
+          <section className="panel admin-panel selection-reminder-panel" id="selection-reminders">
+            <div className="panel-header">
+              <h2>采用提醒兜底</h2>
+              <p>才虫生命周期短信会发给平台代理身份；这里列出需要运营主动提醒用户采用投稿的真实订单。</p>
+            </div>
 
-      <section className="panel admin-panel admin-sms-panel">
-        <div className="panel-header">
-          <h2>短信提醒记录</h2>
-          <p>查看最近的订单提醒短信，方便排查是否已发送、发送给谁，以及失败原因。</p>
-        </div>
-
-        <div className="admin-table-wrap">
-          {smsReminders.length > 0 ? (
-            <table className="admin-table admin-sms-table">
-              <thead>
-                <tr>
-                  <th>提醒</th>
-                  <th>用户</th>
-                  <th>状态</th>
-                  <th>发送时间</th>
-                  <th>关联订单</th>
-                  <th>错误</th>
-                </tr>
-              </thead>
-              <tbody>
-                {smsReminders.map((reminder) => (
-                  <tr key={reminder.id}>
-                    <td>
-                      <strong>{getReminderTypeLabel(reminder.reminderType)}</strong>
-                      <span>{reminder.messageText}</span>
-                      {reminder.deadlineAt ? <span>截止 {formatDate(reminder.deadlineAt)}</span> : null}
-                    </td>
-                    <td>
-                      <strong>{reminder.userPhone}</strong>
-                      <span>尝试 {reminder.attemptCount} 次</span>
-                    </td>
-                    <td>
-                      <span className={`chip ${getReminderStatusClassName(reminder.status)}`}>
-                        {getReminderStatusLabel(reminder.status)}
-                      </span>
-                    </td>
-                    <td>
-                      <strong>{formatDate(reminder.sentAt || reminder.createdAt)}</strong>
-                      <span>创建 {formatDate(reminder.createdAt)}</span>
-                    </td>
-                    <td>
-                      <strong>{reminder.orderDescription || "-"}</strong>
-                      <span>ID {reminder.caichongTaskId || reminder.orderId}</span>
-                      {reminder.caichongSubmissionId ? <span>投稿 {reminder.caichongSubmissionId}</span> : null}
-                    </td>
-                    <td>{reminder.errorMessage || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="empty-state">暂时没有短信提醒记录。提醒表建好后，新投稿或选择期提醒会自动记录在这里。</div>
-          )}
-        </div>
-      </section>
-
-      <section className="panel admin-panel action-orders-panel">
-        <div className="panel-header">
-          <h2>需要处理</h2>
-          <p>这里优先显示真实才虫订单里最值得你关注的事项。</p>
-        </div>
-
-        <div className="action-orders">
-          {actionOrders.length > 0 ? (
-            actionOrders.map((order) => (
-              <article className="action-order" key={order.id}>
-                <div>
-                  <strong>{getOrderAction(order)}</strong>
-                  <p>{order.description}</p>
-                  <span>ID {order.caichongTaskId}</span>
-                </div>
-                <div className="action-order-meta">
-                  <span className="chip">{getTaskStatusLabel(order.status)}</span>
-                  <span className="chip">投稿 {order.submissionCount}</span>
-                  <span className="chip">¥{order.price.toFixed(2)}</span>
-                </div>
-              </article>
-            ))
-          ) : (
-            <div className="empty-state">当前没有需要立即处理的真实订单。</div>
-          )}
-        </div>
-      </section>
-
-      <section className="panel admin-panel">
-        <div className="panel-header">
-          <h2>全部订单</h2>
-          <p>统计卡片默认只计算真实才虫订单；旧 mock 测试单会在列表里标注，不计入真实金额。</p>
-        </div>
-
-        <div className="admin-table-wrap">
-          {orders.length > 0 ? (
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>订单</th>
-                  <th>用户</th>
-                  <th>状态</th>
-                  <th>金额</th>
-                  <th>投稿</th>
-                  <th>更新时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((order) => (
-                  <tr key={order.id}>
-                    <td>
-                      <strong>{order.description}</strong>
+            <div className="action-orders">
+              {selectionReminderOrders.length > 0 ? (
+                selectionReminderOrders.slice(0, 8).map((order) => (
+                  <article className={`action-order selection-alert ${getSelectionReminderLevel(order)}`} key={order.id}>
+                    <div>
+                      <strong>需要提醒用户采用投稿</strong>
+                      <p>{order.description}</p>
+                      <span>用户 {order.userPhone || order.userId}</span>
+                      <span>截止 {formatDate(order.deadlineAt)}</span>
                       <span>ID {order.caichongTaskId}</span>
-                      {!order.isRealCaichongTask ? <span className="legacy-label">旧测试单</span> : null}
-                    </td>
-                    <td>
-                      <strong>{order.userPhone || order.userId}</strong>
-                      {order.userDisplayName ? <span>{order.userDisplayName}</span> : null}
-                    </td>
-                    <td>
+                    </div>
+                    <div className="action-order-meta">
+                      <span className="chip danger-chip">{getSelectionReminderCopy(order)}</span>
+                      <span className="chip">投稿 {order.submissionCount}</span>
+                      <span className="chip">¥{order.price.toFixed(2)}</span>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="empty-state">当前没有进入选择期的真实订单。</div>
+              )}
+            </div>
+          </section>
+
+          <section className="panel admin-panel admin-sms-panel" id="sms-reminders">
+            <div className="panel-header">
+              <h2>短信提醒记录</h2>
+              <p>查看最近的订单提醒短信，方便排查是否已发送、发送给谁，以及失败原因。</p>
+            </div>
+
+            <div className="admin-table-wrap">
+              {smsReminders.length > 0 ? (
+                <table className="admin-table admin-sms-table">
+                  <thead>
+                    <tr>
+                      <th>提醒</th>
+                      <th>用户</th>
+                      <th>状态</th>
+                      <th>发送时间</th>
+                      <th>关联订单</th>
+                      <th>错误</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {smsReminders.map((reminder) => (
+                      <tr key={reminder.id}>
+                        <td>
+                          <strong>{getReminderTypeLabel(reminder.reminderType)}</strong>
+                          <span>{reminder.messageText}</span>
+                          {reminder.deadlineAt ? <span>截止 {formatDate(reminder.deadlineAt)}</span> : null}
+                        </td>
+                        <td>
+                          <strong>{reminder.userPhone}</strong>
+                          <span>尝试 {reminder.attemptCount} 次</span>
+                        </td>
+                        <td>
+                          <span className={`chip ${getReminderStatusClassName(reminder.status)}`}>
+                            {getReminderStatusLabel(reminder.status)}
+                          </span>
+                        </td>
+                        <td>
+                          <strong>{formatDate(reminder.sentAt || reminder.createdAt)}</strong>
+                          <span>创建 {formatDate(reminder.createdAt)}</span>
+                        </td>
+                        <td>
+                          <strong>{reminder.orderDescription || "-"}</strong>
+                          <span>ID {reminder.caichongTaskId || reminder.orderId}</span>
+                          {reminder.caichongSubmissionId ? <span>投稿 {reminder.caichongSubmissionId}</span> : null}
+                        </td>
+                        <td>{reminder.errorMessage || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="empty-state">暂时没有短信提醒记录。提醒表建好后，新投稿或选择期提醒会自动记录在这里。</div>
+              )}
+            </div>
+          </section>
+
+          <section className="panel admin-panel action-orders-panel" id="action-orders">
+            <div className="panel-header">
+              <h2>需要处理</h2>
+              <p>这里优先显示真实才虫订单里最值得你关注的事项。</p>
+            </div>
+
+            <div className="action-orders">
+              {actionOrders.length > 0 ? (
+                actionOrders.map((order) => (
+                  <article className="action-order" key={order.id}>
+                    <div>
+                      <strong>{getOrderAction(order)}</strong>
+                      <p>{order.description}</p>
+                      <span>ID {order.caichongTaskId}</span>
+                    </div>
+                    <div className="action-order-meta">
                       <span className="chip">{getTaskStatusLabel(order.status)}</span>
-                    </td>
-                    <td>¥{order.price.toFixed(2)}</td>
-                    <td>{order.submissionCount}</td>
-                    <td>{formatDate(order.updatedAt || order.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="empty-state">还没有订单数据。</div>
-          )}
-        </div>
-      </section>
+                      <span className="chip">投稿 {order.submissionCount}</span>
+                      <span className="chip">¥{order.price.toFixed(2)}</span>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="empty-state">当前没有需要立即处理的真实订单。</div>
+              )}
+            </div>
+          </section>
 
-      <section className="panel admin-panel">
-        <div className="panel-header">
-          <h2>状态规则对照</h2>
-          <p>按才虫公开规则整理，前台展示、采用投稿、自动刷新都应以这里为准。</p>
-        </div>
+          <section className="panel admin-panel" id="orders">
+            <div className="panel-header">
+              <h2>全部订单</h2>
+              <p>统计卡片默认只计算真实才虫订单；旧 mock 测试单会在列表里标注，不计入真实金额。</p>
+            </div>
 
-        <div className="readiness-grid status-rule-grid">
-          {taskStatusRules.map((rule) => (
-            <article className="readiness-item" key={rule.status}>
-              <div className="readiness-title">
-                <strong>{rule.label}</strong>
-                <span>{rule.isTerminal ? "终态" : "可同步"}</span>
-              </div>
-              <p>{rule.userMeaning}</p>
-              <small>{rule.timeRule}</small>
-              <small>{rule.userAction}</small>
-            </article>
-          ))}
-        </div>
-      </section>
+            <div className="admin-table-wrap">
+              {orders.length > 0 ? (
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>订单</th>
+                      <th>用户</th>
+                      <th>状态</th>
+                      <th>金额</th>
+                      <th>投稿</th>
+                      <th>更新时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map((order) => (
+                      <tr key={order.id}>
+                        <td>
+                          <strong>{order.description}</strong>
+                          <span>ID {order.caichongTaskId}</span>
+                          {!order.isRealCaichongTask ? <span className="legacy-label">旧测试单</span> : null}
+                        </td>
+                        <td>
+                          <strong>{order.userPhone || order.userId}</strong>
+                          {order.userDisplayName ? <span>{order.userDisplayName}</span> : null}
+                        </td>
+                        <td>
+                          <span className="chip">{getTaskStatusLabel(order.status)}</span>
+                        </td>
+                        <td>¥{order.price.toFixed(2)}</td>
+                        <td>{order.submissionCount}</td>
+                        <td>{formatDate(order.updatedAt || order.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="empty-state">还没有订单数据。</div>
+              )}
+            </div>
+          </section>
 
-      <section className="panel admin-panel admin-log-panel">
-        <div className="panel-header">
-          <h2>异常与同步日志</h2>
-          <p>这里记录发单、附件上传、心跳同步等关键动作的失败信息。日志表建好后会自动出现。</p>
-        </div>
+          <section className="panel admin-panel" id="status-rules">
+            <div className="panel-header">
+              <h2>状态规则对照</h2>
+              <p>按才虫公开规则整理，前台展示、采用投稿、自动刷新都应以这里为准。</p>
+            </div>
 
-        <div className="admin-table-wrap">
-          {operationLogs.length > 0 ? (
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>级别</th>
-                  <th>范围</th>
-                  <th>任务</th>
-                  <th>信息</th>
-                </tr>
-              </thead>
-              <tbody>
-                {operationLogs.map((log) => (
-                  <tr key={log.id}>
-                    <td>{formatDate(log.createdAt)}</td>
-                    <td>
-                      <span className={`chip ${log.level === "error" ? "danger-chip" : ""}`}>{log.level}</span>
-                    </td>
-                    <td>{log.scope}</td>
-                    <td>{log.caichongTaskId || "-"}</td>
-                    <td>
-                      <strong>{log.message}</strong>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="empty-state">暂时没有异常日志。若还没执行 `0002_operation_logs.sql`，这里会先保持为空。</div>
-          )}
+            <div className="readiness-grid status-rule-grid">
+              {taskStatusRules.map((rule) => (
+                <article className="readiness-item" key={rule.status}>
+                  <div className="readiness-title">
+                    <strong>{rule.label}</strong>
+                    <span>{rule.isTerminal ? "终态" : "可同步"}</span>
+                  </div>
+                  <p>{rule.userMeaning}</p>
+                  <small>{rule.timeRule}</small>
+                  <small>{rule.userAction}</small>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel admin-panel admin-log-panel" id="logs">
+            <div className="panel-header">
+              <h2>异常与同步日志</h2>
+              <p>这里记录发单、附件上传、心跳同步等关键动作的失败信息。日志表建好后会自动出现。</p>
+            </div>
+
+            <div className="admin-table-wrap">
+              {operationLogs.length > 0 ? (
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>时间</th>
+                      <th>级别</th>
+                      <th>范围</th>
+                      <th>任务</th>
+                      <th>信息</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {operationLogs.map((log) => (
+                      <tr key={log.id}>
+                        <td>{formatDate(log.createdAt)}</td>
+                        <td>
+                          <span className={`chip ${log.level === "error" ? "danger-chip" : ""}`}>{log.level}</span>
+                        </td>
+                        <td>{log.scope}</td>
+                        <td>{log.caichongTaskId || "-"}</td>
+                        <td>
+                          <strong>{log.message}</strong>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="empty-state">暂时没有异常日志。若还没执行 `0002_operation_logs.sql`，这里会先保持为空。</div>
+              )}
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     </main>
   );
 }
