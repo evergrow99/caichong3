@@ -87,6 +87,8 @@ The user-facing product should feel like AICHONG owns the relationship. Do not e
   - waiting title with countdown while the payment link is valid
   - `支付已超时` and `重新支付` when the 30-minute payment link expires
 - Payment polling should continue while the selected task is `PENDING_PAYMENT`.
+- Task detail should never wait indefinitely for Caichong. Detail remote refresh has a short timeout and should return the local Supabase order cache if Caichong is slow.
+- Caichong GET queries have a default timeout; slow external service responses should become visible warn/error logs, not a user-facing infinite loading state.
 - On payment success (`ACTIVE`), hide the payment panel and show the shared success dialog:
   - title: `恭喜发布成功`
   - copy: `付款完成，任务已成功进入提交期。` / `您可以坐等创作者的投稿啦。`
@@ -229,29 +231,27 @@ Treat these as already-started work. Read diffs before editing; do not overwrite
 At the 2026-05-22 handoff, latest local commit is:
 
 ```text
-597cdaf Update release control handoff
+ddffe71 Add release summary for admin payment sync handoff
 ```
 
-The 2026-05-22收口范围 includes these touched areas:
+The 2026-05-22 latest uncommitted patch before commit includes:
 
 ```text
- M app/admin/page.tsx
- M app/api/sync/heartbeat/route.ts
- M app/api/sync/order-reminders/route.ts
+ M app/api/tasks/[taskId]/route.ts
  M app/globals.css
- M components/admin-login-form.tsx
- M components/app-dialog.tsx
  M components/order-console.tsx
  M docs/current-release-test-brief.md
  M docs/release-management.md
  M lib/caichong.ts
- M lib/heartbeat-sync.ts
- M lib/market-classification.ts
- M lib/task-rules.ts
-?? docs/project-summary-nontechnical.md
-?? public/payment-bridge-preview.html
-?? public/payment-confirmation-preview.html
+ M lib/task-service.ts
 ```
+
+Patch purpose:
+
+- Prevent task detail from hanging after payment when Caichong detail refresh is slow.
+- Return local order cache after a short remote refresh timeout.
+- Add default timeout control to Caichong GET queries.
+- Add sidebar collapse/expand tooltip copy polish.
 
 After this handoff is committed, run `git status --short --branch` before new edits and treat any remaining local changes as separate work.
 

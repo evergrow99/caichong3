@@ -66,6 +66,8 @@ export type AgentEvent = {
 
 export type CaichongClientOptions = {
   apiKey?: string;
+  queryRetryDelaysMs?: number[];
+  queryTimeoutMs?: number;
 };
 
 export type RegisteredAgent = {
@@ -93,6 +95,7 @@ type TrpcFailure = {
 
 const DEFAULT_BASE_URL = "https://main-api.caichong.net";
 const QUERY_RETRY_DELAYS_MS = [500, 1200];
+const DEFAULT_QUERY_TIMEOUT_MS = 8000;
 
 type RawTask = PublishTask & {
   id?: string;
@@ -136,6 +139,19 @@ function getConfig(options: CaichongClientOptions = {}) {
     apiKey,
     baseUrl: baseUrl.replace(/\/$/, "")
   };
+}
+
+function resolveQueryTimeoutMs(options: CaichongClientOptions = {}) {
+  const timeoutMs = options.queryTimeoutMs ?? Number(process.env.CAICHONG_QUERY_TIMEOUT_MS || DEFAULT_QUERY_TIMEOUT_MS);
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_QUERY_TIMEOUT_MS;
+}
+
+function normalizeFetchError(error: unknown, endpoint: string) {
+  if (error instanceof Error && error.name === "AbortError") {
+    return new Error(`才虫服务响应超时：${endpoint}`);
+  }
+
+  return error;
 }
 
 function unwrapTrpc<T>(payload: TrpcSuccess<T> | TrpcFailure): T {
@@ -259,27 +275,35 @@ function toPublishAttachment(attachment: Attachment) {
 async function trpcQuery<T>(endpoint: string, input: Record<string, unknown> = {}, options: CaichongClientOptions = {}) {
   const { apiKey, baseUrl } = getConfig(options);
   const encodedInput = encodeURIComponent(JSON.stringify(input));
+  const retryDelays = options.queryRetryDelaysMs ?? QUERY_RETRY_DELAYS_MS;
+  const timeoutMs = resolveQueryTimeoutMs(options);
   let lastError: unknown;
 
-  for (let attempt = 0; attempt <= QUERY_RETRY_DELAYS_MS.length; attempt += 1) {
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
       const response = await fetch(`${baseUrl}/trpc/${endpoint}?input=${encodedInput}`, {
         method: "GET",
         headers: {
           "X-API-Key": apiKey
         },
-        cache: "no-store"
+        cache: "no-store",
+        signal: controller.signal
       });
 
       const payload = (await response.json()) as TrpcSuccess<T> | TrpcFailure;
       return unwrapTrpc(payload);
     } catch (error) {
-      lastError = error;
-      const retryDelay = QUERY_RETRY_DELAYS_MS[attempt];
+      lastError = normalizeFetchError(error, endpoint);
+      const retryDelay = retryDelays[attempt];
       if (retryDelay === undefined) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, retryDelay));
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

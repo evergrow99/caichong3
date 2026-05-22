@@ -2425,7 +2425,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
           <button
             aria-label={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
             className="sidebar-collapse-button"
-            data-sidebar-tooltip={isSidebarCollapsed ? "展开侧栏" : undefined}
+            data-sidebar-tooltip={isSidebarCollapsed ? "展开" : "收起"}
             type="button"
             onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
           >

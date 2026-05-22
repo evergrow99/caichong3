@@ -14,6 +14,12 @@
 
 对应 `docs/release-management.md` 的 `上线摘要 2026-05-22 后台结构、支付确认体验与同步韧性`。
 
+追加补丁摘要：
+
+- 对应 `docs/release-management.md` 的 `上线摘要 2026-05-22 支付详情加载防卡死与侧栏提示补丁`。
+- 线上已复现：真实付款后回到详情页停留在 loading，需要手动刷新才显示。
+- 修复策略：任务详情远程刷新加 4.5 秒上限，超时先返回本地缓存；才虫 GET 查询统一加 8 秒默认超时；后台记录 warn 日志。
+
 本轮重点验证：
 
 - 后台固定顶部栏、左侧菜单、右侧独立滚动区域是否稳定对齐。
@@ -24,6 +30,8 @@
 - 附件预览弹窗是否不再导致页面穿透滚动。
 - `/api/sync/heartbeat`、`/api/sync/order-reminders` 在局部失败时是否保留可读返回和 warn 日志。
 - 市场分类对标题/金句/图文和短视频任务是否更准确。
+- 真实付款后回到任务详情页时，不应因才虫实时详情查询慢而长时间卡在 loading。
+- 展开侧栏时“收起”按钮有鼠滑提示；收起侧栏时提示文案为 `展开`。
 
 ## 本轮版本状态
 
@@ -33,6 +41,7 @@
 - 本轮最新提交：
   - `ddffe71 Add release summary for admin payment sync handoff`
   - `b92ca2b Prepare release handoff for admin and payment flow`
+- 当前另有待提交补丁：支付详情加载防卡死与侧栏提示补丁。
 - 注意：如果测试线程只能读取远端代码，需要先推送这 2 个提交；如果测试线程和本线程共用当前工作区，可以直接测试本地最新 `main`。
 
 ## 本轮涉及文件
@@ -44,6 +53,7 @@
 - `components/order-console.tsx`
 - `app/api/sync/heartbeat/route.ts`
 - `app/api/sync/order-reminders/route.ts`
+- `app/api/tasks/[taskId]/route.ts`
 - `lib/caichong.ts`
 - `lib/heartbeat-sync.ts`
 - `lib/market-classification.ts`
@@ -83,6 +93,12 @@
 - 增加标题/金句/图文、短视频类任务识别规则。
 - 新增非技术项目总结文档。
 
+6. 支付详情加载防卡死补丁
+- 任务详情远程刷新最多等待 4.5 秒，超时先返回本地缓存。
+- 才虫 GET 查询默认 8 秒超时，避免外部服务慢时拖住用户页面。
+- 远程刷新失败写入 operation logs warn，便于后台排查。
+- 侧栏展开/收起按钮 tooltip 文案补齐。
+
 ## 本轮重点测试路径
 
 - `npm run build` 必须通过。
@@ -92,6 +108,7 @@
 - 手机号登录弹窗：输入、清空、验证码错误、关闭后重开。
 - 发布一个低额测试任务到待支付状态，检查付款桥接页、倒计时、重新支付、回到任务详情。
 - 付款完成后检查任务是否自动进入提交期并出现成功提示。
+- 付款完成后回到详情页，检查页面不应长时间停留在 loading；即便才虫接口慢，也应先显示本地详情。
 - 调用或观察 `/api/sync/heartbeat`、`/api/sync/order-reminders`，确认失败日志语义不会影响可用订单继续刷新。
 - 查看市场页/发现页，确认标题/金句/视频类任务分类符合预期。
 

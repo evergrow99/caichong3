@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
 import { findByUserAndTaskId, mapLocalOrderToTask, updateFromCaichongTask } from "@/lib/order-repository";
 import { getErrorMessage } from "@/lib/errors";
+import { recordOperationLog } from "@/lib/operation-log";
 import { getTaskService } from "@/lib/task-service";
 
 type RouteContext = {
@@ -9,6 +10,7 @@ type RouteContext = {
 };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DETAIL_REMOTE_REFRESH_TIMEOUT_MS = 4500;
 
 export async function GET(_request: Request, { params }: RouteContext) {
   try {
@@ -21,7 +23,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
       if (uuidPattern.test(taskId)) {
         try {
-          const taskService = await getTaskService(user);
+          const taskService = await getTaskService(user, {
+            queryRetryDelaysMs: [],
+            queryTimeoutMs: DETAIL_REMOTE_REFRESH_TIMEOUT_MS
+          });
           const remoteTask = await taskService.service.getTask(taskId);
           let syncedTask = remoteTask;
           try {
@@ -36,7 +41,18 @@ export async function GET(_request: Request, { params }: RouteContext) {
             description: localTask.description,
             paymentUrl: localTask.paymentUrl || syncedTask.paymentUrl
           });
-        } catch {
+        } catch (remoteError) {
+          await recordOperationLog({
+            userId: user.id,
+            orderId: localOrder.id,
+            caichongTaskId: taskId,
+            scope: "task.detail",
+            level: "warn",
+            message: "任务详情远程刷新超时或失败，已返回本地缓存",
+            details: {
+              error: getErrorMessage(remoteError)
+            }
+          });
           return NextResponse.json(localTask);
         }
       }

@@ -190,6 +190,7 @@ textarea:focus-visible {
 
 .sidebar-collapse-button {
   appearance: none;
+  position: relative;
   display: grid;
   width: 28px;
   height: 28px;
@@ -347,6 +348,8 @@ textarea:focus-visible {
     border-radius: 999px;
   }
 
+  .sidebar-collapse-button[data-sidebar-tooltip]:hover::after,
+  .sidebar-collapse-button[data-sidebar-tooltip]:focus-visible::after,
   .studio-shell.sidebar-collapsed [data-sidebar-tooltip]:hover::after,
   .studio-shell.sidebar-collapsed [data-sidebar-tooltip]:focus-visible::after {
     position: absolute;
