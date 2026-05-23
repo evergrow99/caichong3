@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AppConfirmDialog, AppNoticeDialog, AppToast } from "@/components/app-dialog";
 import type { PublishTask, Submission } from "@/lib/caichong";
 import { classifyMarketTask } from "@/lib/market-classification";
@@ -1181,7 +1181,6 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
   const [readSubmissionCounts, setReadSubmissionCounts] = useState<Record<string, number>>({});
   const descriptionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const compactDescriptionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const homeComposerFormRef = useRef<HTMLFormElement | null>(null);
   const compactComposerFormRef = useRef<HTMLFormElement | null>(null);
   const filterMenuRef = useRef<HTMLElement | null>(null);
@@ -1310,26 +1309,40 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     setIsLoginOpen(false);
   }
 
-  function initializeSubmissionReadCountsIfNeeded(nextTasks: PublishTask[]) {
+  function readStoredSubmissionReadCounts(): Record<string, number> {
+    if (typeof window === "undefined") {
+      return {};
+    }
+
+    try {
+      const storedCounts = window.localStorage.getItem(getSubmissionReadStorageKey());
+      return storedCounts ? (JSON.parse(storedCounts) as Record<string, number>) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function reconcileSubmissionReadCounts(nextTasks: PublishTask[]) {
     if (typeof window === "undefined") {
       return;
     }
 
-    const storageKey = getSubmissionReadStorageKey();
-    if (window.localStorage.getItem(storageKey) !== null) {
-      return;
-    }
+    const storedCounts = readStoredSubmissionReadCounts();
+    let didChange = window.localStorage.getItem(getSubmissionReadStorageKey()) === null;
+    const nextCounts = { ...storedCounts };
 
-    const initialCounts = nextTasks.reduce<Record<string, number>>((counts, task) => {
+    nextTasks.forEach((task) => {
       const submissionCount = getSubmissionCount(task);
-      if (submissionCount > 0 && !isSyncableTask(task)) {
-        counts[task.taskId] = submissionCount;
+      if (nextCounts[task.taskId] === undefined) {
+        nextCounts[task.taskId] = submissionCount;
+        didChange = true;
       }
-      return counts;
-    }, {});
+    });
 
-    window.localStorage.setItem(storageKey, JSON.stringify(initialCounts));
-    setReadSubmissionCounts(initialCounts);
+    if (didChange) {
+      saveReadSubmissionCounts(nextCounts);
+    }
+    setReadSubmissionCounts(nextCounts);
   }
 
   function markTaskSubmissionsRead(taskId: string, count?: number) {
@@ -1398,13 +1411,19 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     const scroller = document.querySelector(".studio-content");
     const composer = homeComposerFormRef.current;
     setIsCompactComposerExpanded(false);
+
+    const isMobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
     if (scroller instanceof HTMLElement && composer) {
-      scroller.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-      scroller.scrollTop = 0;
-      scroller.scrollLeft = 0;
+      const targetTop = isMobileViewport ? Math.max(0, composer.offsetTop - 18) : 0;
+      scroller.scrollTo({ top: targetTop, left: 0, behavior: "smooth" });
     } else {
-      composer?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      composer?.scrollIntoView({ behavior: "smooth", block: isMobileViewport ? "start" : "center", inline: "nearest" });
     }
+
+    if (isMobileViewport) {
+      return;
+    }
+
     window.requestAnimationFrame(() => {
       if (scroller instanceof HTMLElement) {
         scroller.scrollLeft = 0;
@@ -1412,6 +1431,25 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       descriptionTextareaRef.current?.focus({ preventScroll: true });
     });
   }
+
+  const syncCompactComposerVisibility = useCallback(() => {
+    if (!marketPreview || selectedTaskId) {
+      setIsCompactComposerVisible(false);
+      setIsCompactComposerExpanded(false);
+      return;
+    }
+
+    const composer = homeComposerFormRef.current;
+    if (!composer) {
+      return;
+    }
+
+    const shouldShowCompactComposer = composer.getBoundingClientRect().bottom < 0;
+    setIsCompactComposerVisible(shouldShowCompactComposer);
+    if (!shouldShowCompactComposer) {
+      setIsCompactComposerExpanded(false);
+    }
+  }, [marketPreview, selectedTaskId]);
 
   async function loadTasks() {
     setIsLoading(true);
@@ -1423,7 +1461,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       );
       const nextTasks = data.tasks || [];
       setTasks(nextTasks);
-      initializeSubmissionReadCountsIfNeeded(nextTasks);
+      reconcileSubmissionReadCounts(nextTasks);
       setDataSource(data.source || "unknown");
       setAutoRefreshError(null);
       return nextTasks;
@@ -2094,19 +2132,6 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   }, [selectedTaskId]);
 
   useEffect(() => {
-    const textarea = compactDescriptionTextareaRef.current;
-    if (!textarea) {
-      return;
-    }
-
-    textarea.style.height = "auto";
-    const minHeight = isCompactComposerExpanded ? COMPOSER_TEXTAREA_MIN_HEIGHT : 42;
-    const maxHeight = isCompactComposerExpanded ? COMPOSER_TEXTAREA_MAX_HEIGHT : 42;
-    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight)}px`;
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [description, isCompactComposerExpanded]);
-
-  useEffect(() => {
     if (!marketPreview || selectedTaskId) {
       setIsCompactComposerVisible(false);
       setIsCompactComposerExpanded(false);
@@ -2114,21 +2139,38 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
 
     const composerNode = homeComposerFormRef.current;
-    if (!composerNode || typeof IntersectionObserver === "undefined") {
+    if (!composerNode) {
       return;
     }
 
-    const observer = new IntersectionObserver(([entry]) => {
-      const shouldShowCompactComposer = !entry.isIntersecting && entry.boundingClientRect.bottom < 0;
-      setIsCompactComposerVisible(shouldShowCompactComposer);
-      if (!shouldShowCompactComposer) {
-        setIsCompactComposerExpanded(false);
-      }
-    });
+    let frameId = 0;
+    const updateCompactComposerVisibility = () => {
+      frameId = 0;
+      syncCompactComposerVisibility();
+    };
 
-    observer.observe(composerNode);
-    return () => observer.disconnect();
-  }, [marketPreview, selectedTaskId]);
+    const scheduleUpdate = () => {
+      if (frameId) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(updateCompactComposerVisibility);
+    };
+
+    const scroller = document.querySelector(".studio-content");
+    syncCompactComposerVisibility();
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    scroller?.addEventListener("scroll", scheduleUpdate, { passive: true });
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate);
+      scroller?.removeEventListener("scroll", scheduleUpdate);
+    };
+  }, [marketPreview, selectedTaskId, syncCompactComposerVisibility]);
 
   useEffect(() => {
     if (!isCompactComposerExpanded) {
@@ -2166,7 +2208,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
 
     try {
-      const storedCounts = window.localStorage.getItem(getSubmissionReadStorageKey());
+      const storedCounts = window.localStorage.getItem(SUBMISSION_READ_COUNTS_STORAGE_KEY);
       setReadSubmissionCounts(storedCounts ? (JSON.parse(storedCounts) as Record<string, number>) : {});
     } catch {
       setReadSubmissionCounts({});
@@ -2678,7 +2720,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         </div>
       ) : null}
 
-      <section className="studio-content">
+      <section className="studio-content" onScroll={syncCompactComposerVisibility}>
         {!hasResolvedInitialRoute ? (
           <section className="detail-stage">
             <div className="content-body">
@@ -3180,16 +3222,14 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
               }}
             />
           </label>
-          <textarea
-            ref={compactDescriptionTextareaRef}
+          <button
+            type="button"
+            className={`compact-publish-field${description.trim() ? "" : " is-placeholder"}`}
             aria-label="快速发布任务说明"
-            value={description}
-            placeholder={usesShortCompactPrompt ? "点击立即开始..." : "也想发一个需求任务？点击立即开始..."}
-            readOnly
             disabled={isCreating}
-            onFocus={() => setIsComposerFocused(true)}
-            onBlur={() => setIsComposerFocused(false)}
-          />
+          >
+            {description.trim() || (usesShortCompactPrompt ? "点击立即开始..." : "也想发一个需求任务？点击立即开始...")}
+          </button>
           <button className="compact-publish-button" type="submit" disabled={isPublishDisabled}>
             {isCreating ? "发布中" : "发布任务 →"}
           </button>
