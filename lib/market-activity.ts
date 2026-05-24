@@ -61,7 +61,12 @@ type MarketObservedTaskRow = {
   price: number | string;
   total_price: number | string;
   status: string;
+  submission_count: number | null;
   activity_at: string;
+  raw?: {
+    closeReason?: string;
+    paidAt?: string;
+  } | null;
 };
 
 type MarketObservedTaskUpsertRow = {
@@ -85,6 +90,7 @@ type LocalPublishedOrderRow = {
   status: string;
   submission_count: number | null;
   created_at: string | null;
+  close_reason: string | null;
 };
 
 type MarketProfileRow = {
@@ -111,7 +117,7 @@ const DEFAULT_SYNC_INTERVAL_MINUTES = 30;
 const DEFAULT_MAX_MARKET_PAGES = 10;
 const MARKET_CATEGORIES: MarketActivityCategory[] = ["全部", "文案", "图片", "声音", "视频"];
 const MIN_PUBLIC_MARKET_DESCRIPTION_LENGTH = 10;
-const PUBLISHED_MARKET_STATUSES = new Set(["ACTIVE", "PENDING_SELECTION", "COMPLETED"]);
+const PUBLISHED_MARKET_STATUSES = new Set(["ACTIVE", "PENDING_SELECTION", "COMPLETED", "CLOSED"]);
 const INTERNAL_TEST_PHONES = new Set(["10000000000", "1111111111", "11111111111", "12222222222", "13700000000", "13800000000", "13900000000"]);
 const INTERNAL_TEST_USER_IDS = new Set(["00000000-0000-4000-8000-000000000001"]);
 
@@ -155,6 +161,26 @@ function isPublishedMarketStatus(status?: string | null) {
   return PUBLISHED_MARKET_STATUSES.has(String(status || "").toUpperCase());
 }
 
+function isPublicMarketTask({
+  status,
+  description,
+  closeReason,
+  paidAt,
+  submissionCount = 0
+}: {
+  status?: string | null;
+  description?: string | null;
+  closeReason?: string | null;
+  paidAt?: string | null;
+  submissionCount?: number | null;
+}) {
+  if (!isPublishedMarketStatus(status) || !isPublicMarketDescription(description)) return false;
+  if (String(status || "").toUpperCase() !== "CLOSED") return true;
+  if (closeReason === "TIMEOUT_NO_PAYMENT") return false;
+  if (closeReason === "TIMEOUT_NO_SUBMISSION" || closeReason === "TIMEOUT_NO_SELECTION") return true;
+  return Boolean(paidAt) || Number(submissionCount || 0) > 0;
+}
+
 function isInternalTestProfile(profile: Pick<MarketProfileRow, "id" | "phone" | "display_name">) {
   return (
     INTERNAL_TEST_USER_IDS.has(profile.id) ||
@@ -193,7 +219,7 @@ function getMarketTaskTitle(description: string) {
 
 function getMarketStatusLabel(status: string) {
   if (status === "COMPLETED") return "已完成";
-  if (status === "CLOSED") return "已结束";
+  if (status === "CLOSED") return "已完成";
   return "进行中";
 }
 
@@ -263,7 +289,15 @@ async function listCaichongMarketTasks() {
 
 function mapExploreTasksToRows(tasks: ExploreTask[], nowIso: string): MarketObservedTaskUpsertRow[] {
   return tasks
-    .filter((task) => task.taskId && isPublishedMarketStatus(task.status) && isPublicMarketDescription(task.description))
+    .filter((task) =>
+      task.taskId && isPublicMarketTask({
+        status: task.status,
+        description: task.description,
+        closeReason: task.closeReason,
+        paidAt: task.paidAt,
+        submissionCount: task.submissionCount
+      })
+    )
     .map((task) => {
       const caichongCreatedAt = toIsoDate(task.createdAt);
       const activityAt = caichongCreatedAt || nowIso;
@@ -283,7 +317,9 @@ function mapExploreTasksToRows(tasks: ExploreTask[], nowIso: string): MarketObse
           source: "caichong_market",
           bonusCount: task.bonusCount || 0,
           bonusTotal: task.bonusTotal || 0,
-          deadlineAt: task.deadlineAt
+          deadlineAt: task.deadlineAt,
+          closeReason: task.closeReason,
+          paidAt: task.paidAt
         }
       };
     });
@@ -291,7 +327,14 @@ function mapExploreTasksToRows(tasks: ExploreTask[], nowIso: string): MarketObse
 
 function mapLocalOrdersToRows(orders: LocalPublishedOrderRow[], nowIso: string): MarketObservedTaskUpsertRow[] {
   return orders
-    .filter((order) => order.caichong_task_id && isPublishedMarketStatus(order.status) && isPublicMarketDescription(order.description))
+    .filter((order) =>
+      order.caichong_task_id && isPublicMarketTask({
+        status: order.status,
+        description: order.description,
+        closeReason: order.close_reason,
+        submissionCount: order.submission_count
+      })
+    )
     .map((order) => {
       const caichongCreatedAt = toIsoDate(order.created_at || undefined);
       const activityAt = caichongCreatedAt || nowIso;
@@ -308,7 +351,8 @@ function mapLocalOrdersToRows(orders: LocalPublishedOrderRow[], nowIso: string):
         activity_at: activityAt,
         last_seen_at: nowIso,
         raw: {
-          source: "local_published_order"
+          source: "local_published_order",
+          closeReason: order.close_reason
         }
       };
     });
@@ -363,7 +407,7 @@ async function syncLocalPublishedOrders(nowIso: string) {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("orders")
-    .select("user_id, caichong_task_id, description, price, status, submission_count, created_at")
+    .select("user_id, caichong_task_id, description, price, status, submission_count, created_at, close_reason")
     .in("status", Array.from(PUBLISHED_MARKET_STATUSES))
     .limit(5000);
 
@@ -645,7 +689,7 @@ export async function getMarketFeed({
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("market_observed_tasks")
-    .select("task_id, description, total_price, status, activity_at")
+    .select("task_id, description, total_price, status, submission_count, activity_at, raw")
     .order("activity_at", { ascending: false })
     .limit(5000);
 
@@ -666,7 +710,15 @@ export async function getMarketFeed({
   }
 
   const items = ((data || []) as MarketObservedTaskRow[])
-    .filter((task) => isPublishedMarketStatus(task.status) && isPublicMarketDescription(task.description))
+    .filter((task) =>
+      isPublicMarketTask({
+        status: task.status,
+        description: task.description,
+        closeReason: task.raw?.closeReason,
+        paidAt: task.raw?.paidAt,
+        submissionCount: task.submission_count
+      })
+    )
     .map(mapObservedTaskToMarketItem);
   const categoryCounts = new Map<MarketActivityCategory, number>(MARKET_CATEGORIES.map((key) => [key, key === "全部" ? items.length : 0]));
 
@@ -718,20 +770,20 @@ export async function getMarketActivitySummary(): Promise<MarketActivitySummary>
   const [todayRowsResult, monthRowsResult, totalRowsResult, recentResult] = await Promise.all([
     supabase
       .from("market_observed_tasks")
-      .select("description, total_price, status")
+      .select("description, total_price, status, submission_count, raw")
       .gte("activity_at", todayStart)
       .lt("activity_at", tomorrowStart)
       .limit(5000),
     supabase
       .from("market_observed_tasks")
-      .select("description, total_price, status")
+      .select("description, total_price, status, submission_count, raw")
       .gte("activity_at", monthStart)
       .lt("activity_at", nextMonthStart)
       .limit(5000),
-    supabase.from("market_observed_tasks").select("description, total_price, status").limit(5000),
+    supabase.from("market_observed_tasks").select("description, total_price, status, submission_count, raw").limit(5000),
     supabase
       .from("market_observed_tasks")
-      .select("task_id, description, total_price, status, activity_at")
+      .select("task_id, description, total_price, status, submission_count, activity_at, raw")
       .order("activity_at", { ascending: false })
       .limit(20)
   ]);
@@ -746,17 +798,43 @@ export async function getMarketActivitySummary(): Promise<MarketActivitySummary>
     }
   }
 
-  const todayRows = ((todayRowsResult.data || []) as { description: string; total_price: number | string; status: string }[]).filter((row) =>
-    isPublishedMarketStatus(row.status) && isPublicMarketDescription(row.description)
+  const todayRows = ((todayRowsResult.data || []) as MarketObservedTaskRow[]).filter((row) =>
+    isPublicMarketTask({
+      status: row.status,
+      description: row.description,
+      closeReason: row.raw?.closeReason,
+      paidAt: row.raw?.paidAt,
+      submissionCount: row.submission_count
+    })
   );
-  const monthRows = ((monthRowsResult.data || []) as { description: string; total_price: number | string; status: string }[]).filter((row) =>
-    isPublishedMarketStatus(row.status) && isPublicMarketDescription(row.description)
+  const monthRows = ((monthRowsResult.data || []) as MarketObservedTaskRow[]).filter((row) =>
+    isPublicMarketTask({
+      status: row.status,
+      description: row.description,
+      closeReason: row.raw?.closeReason,
+      paidAt: row.raw?.paidAt,
+      submissionCount: row.submission_count
+    })
   );
-  const totalRows = ((totalRowsResult.data || []) as { description: string; total_price: number | string; status: string }[]).filter((row) =>
-    isPublishedMarketStatus(row.status) && isPublicMarketDescription(row.description)
+  const totalRows = ((totalRowsResult.data || []) as MarketObservedTaskRow[]).filter((row) =>
+    isPublicMarketTask({
+      status: row.status,
+      description: row.description,
+      closeReason: row.raw?.closeReason,
+      paidAt: row.raw?.paidAt,
+      submissionCount: row.submission_count
+    })
   );
   const recentOrders = ((recentResult.data || []) as MarketObservedTaskRow[])
-    .filter((task) => isPublishedMarketStatus(task.status) && isPublicMarketDescription(task.description))
+    .filter((task) =>
+      isPublicMarketTask({
+        status: task.status,
+        description: task.description,
+        closeReason: task.raw?.closeReason,
+        paidAt: task.raw?.paidAt,
+        submissionCount: task.submission_count
+      })
+    )
     .map((task) => ({
     taskId: task.task_id,
     description: task.description,

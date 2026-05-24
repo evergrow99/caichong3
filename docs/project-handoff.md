@@ -10,6 +10,10 @@ AICHONG is a demand-side creative task publishing workspace. Users describe a cr
 
 The user-facing product should feel like AICHONG owns the relationship. Do not expose Caichong integration wording, API mechanics, or internal sync language in the demand-side flow.
 
+## Source Of Truth Documents
+
+- Market dynamics rules: `docs/market-dynamics-rules.md`. Read this before changing homepage/discovery market display, status labels, filters, categories, or statistics.
+
 ## Visual And UX Rules
 
 - Product mood: calm, capable, dark green-black, restrained futuristic.

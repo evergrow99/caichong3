@@ -810,9 +810,9 @@ P2 可带观察上线：
   - 保留已有已读记录。
   - 新任务自动初始化计数，减少刷新后红点/未读数异常。
 - 发现/市场过滤：
-  - 只展示 `ACTIVE`、`PENDING_SELECTION`、`COMPLETED` 状态任务。
+  - 展示 `ACTIVE`、`PENDING_SELECTION`、`COMPLETED`，以及有成功发布证据的 `CLOSED` 状态任务。
   - 过滤测试任务、测试支付、支付流程、不用接单等描述。
-  - `CLOSED` 展示为“已结束”，不再写成“已完成”。
+  - 未付款关闭的 `CLOSED` 不展示；可展示的 `CLOSED` 在市场中统一显示为“已完成”。
 - 开发与渲染兼容：
   - 根节点增加 hydration warning 容错。
   - 增加局域网开发来源 `192.168.31.16`，用于本地手机预览；不包含密钥。
@@ -846,4 +846,51 @@ P2 可带观察上线：
 - 底部紧凑发布条是否正常出现，且不会遮挡主要操作。
 - 新投稿到来后，任务红点/未读数是否准确。
 - `/api/platform/market?pageSize=3` 是否正常返回公开市场任务。
+- `/api/health/readiness` 是否 `ready: true`。
+
+## 上线摘要 2026-05-24 首页市场动态规则修正与展示稳定
+
+上线结论：可上线，带观察。
+
+本轮包含变更：
+
+- 市场动态规则修正：
+  - `CLOSED` 不再一刀切过滤。
+  - 未付款关闭任务不展示，例如 `TIMEOUT_NO_PAYMENT` 或没有成功发布证据的关闭任务。
+  - 成功发布后关闭的任务继续展示，包括无人投稿关闭、选择期超时关闭、有付款或有投稿证据的关闭任务。
+- 市场公开状态文案：
+  - `ACTIVE`、`PENDING_SELECTION` 显示为“进行中”。
+  - `COMPLETED` 显示为“已完成”。
+  - 可展示的 `CLOSED` 也显示为“已完成”。
+- 首页市场动态 UI：
+  - 桌面端筛选条吸顶后的磨玻璃背景铺满右侧工作区。
+  - 手机端市场预览不裁切 sticky 行。
+  - 手机端筛选条避开顶部菜单和登录按钮。
+- 规则文档固化：
+  - 新增 `docs/market-dynamics-rules.md` 作为市场动态规则口径。
+  - `docs/project-handoff.md` 增加规则文档入口。
+
+上线总控验证：
+
+- `npm run build` 通过。
+- `npm run lint` 通过，0 errors，13 warnings；warnings 为既有 `<img>` 和 React Hook dependency 提示。
+- `git diff --check` 通过。
+- 本地 `/api/platform/market?pageSize=100` 返回 11 条公开任务。
+- 未付款关闭任务 `f911e453-86e0-495d-8a7f-da98a315633f` 已过滤。
+- `ACTIVE` / `PENDING_SELECTION` 均显示“进行中”，`COMPLETED` 和可展示 `CLOSED` 均显示“已完成”。
+- Browser 桌面 1280x720 首页冒烟通过：市场卡片显示，筛选条吸顶背景 fixed，无横向溢出。
+- Browser 手机 390x844 首页冒烟通过：筛选条避开顶部按钮，底部紧凑发布条正常，无横向溢出。
+- 干净浏览器复测无 console error。
+
+残留风险：
+
+- 市场动态数量会因为 `CLOSED` 规则调整而变化，需要上线后观察是否符合运营预期。
+- 旧市场观察数据如果缺少 `raw.closeReason` / `raw.paidAt`，会被保守过滤；后续同步可逐步补齐。
+- 手机端真实设备上仍需观察 sticky 筛选条和底部紧凑发布条手感。
+
+上线后观察：
+
+- 线上 `/api/platform/market?pageSize=100` 是否过滤未付款关闭任务。
+- 首页市场动态数量是否稳定在预期范围。
+- 手机端首页滚动时筛选条是否遮挡顶部菜单或登录按钮。
 - `/api/health/readiness` 是否 `ready: true`。
