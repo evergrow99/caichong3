@@ -50,10 +50,12 @@ export function AdminLoginForm({ initialReason }: AdminLoginFormProps) {
           body: JSON.stringify({ phone })
         })
       );
-      if (result.message && !result.message.includes("开发环境")) {
+      if (result.message) {
         setMessage(result.message);
-      } else {
-        setMessage(null);
+        const devCode = result.message.match(/\b(\d{6})\b/)?.[1];
+        if (devCode) {
+          setCode(devCode);
+        }
       }
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "验证码发送失败");

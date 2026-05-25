@@ -1380,6 +1380,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
 
   function updateSelectedTask(taskId: string | null) {
     selectedTaskIdRef.current = taskId;
+    setError(null);
     if (!taskId) {
       detailRequestSeqRef.current += 1;
       setIsDetailLoading(false);
@@ -1579,7 +1580,10 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       }
 
       setError(detailError instanceof Error ? detailError.message : "订单详情读取失败");
-      setSelectedTask(null);
+      const fallbackTask =
+        tasks.find((task) => task.taskId === taskId) ||
+        (selectedTask?.taskId === taskId ? selectedTask : null);
+      setSelectedTask(fallbackTask);
       setSubmissions([]);
       return null;
     } finally {
@@ -2930,6 +2934,8 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                   </div>
                 ) : selectedTask ? (
                   <div className="detail-stack">
+                    {error ? <div className="message error detail-error-message">{error}</div> : null}
+
                     {isSyncableTaskStatus(selectedTask.status) ? (
                       <div className="detail-floating-bar">
                         <span className={`detail-refresh-meta ${autoRefreshError ? "is-error" : ""}`}>{refreshMetaText}</span>
@@ -3151,7 +3157,9 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                     </div>
                   </div>
                 ) : (
-                  <div className="empty-state">请选择任务，或发布一个新任务。</div>
+                  <div className={error ? "message error detail-error-message" : "empty-state"}>
+                    {error || "请选择任务，或发布一个新任务。"}
+                  </div>
                 )}
               </div>
             </section>

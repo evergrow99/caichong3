@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAdminPhone } from "@/lib/admin";
 import {
-  AUTH_COOKIE_NAME,
+  ADMIN_AUTH_COOKIE_NAME,
   DEV_LOGIN_CODE,
   isDevLoginAllowed,
   isMainlandChinaPhone,
@@ -36,10 +36,10 @@ export async function POST(request: Request) {
       await ensureUserProfile(user, { markLogin: true });
 
       const response = NextResponse.json(user);
-      response.cookies.set(AUTH_COOKIE_NAME, phone, {
+      response.cookies.set(ADMIN_AUTH_COOKIE_NAME, phone, {
         httpOnly: true,
         sameSite: "lax",
-        path: "/",
+        path: "/admin",
         maxAge: 60 * 60 * 24
       });
 
@@ -52,10 +52,10 @@ export async function POST(request: Request) {
     await ensureUserProfile(user, { markLogin: true });
 
     const response = NextResponse.json(user);
-    response.cookies.set(AUTH_COOKIE_NAME, phone, {
+    response.cookies.set(ADMIN_AUTH_COOKIE_NAME, phone, {
       httpOnly: true,
       sameSite: "lax",
-      path: "/",
+      path: "/admin",
       maxAge: 60 * 60 * 24
     });
 

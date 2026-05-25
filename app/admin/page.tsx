@@ -1,8 +1,9 @@
-import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { isAdminUser } from "@/lib/admin";
-import { getCurrentUser } from "@/lib/current-user";
+import { ADMIN_AUTH_COOKIE_NAME } from "@/lib/auth-utils";
+import { getCurrentAdminUser } from "@/lib/current-user";
 import { syncPlatformHeartbeat } from "@/lib/heartbeat-sync";
 import { listOperationLogs } from "@/lib/operation-log";
 import { listAdminOrderSmsReminders } from "@/lib/order-reminders";
@@ -99,7 +100,7 @@ function formatDate(value?: string) {
 async function runPlatformHeartbeat() {
   "use server";
 
-  const user = await getCurrentUser();
+  const user = await getCurrentAdminUser();
   if (!isAdminUser(user)) {
     return;
   }
@@ -108,8 +109,21 @@ async function runPlatformHeartbeat() {
   revalidatePath("/admin");
 }
 
+async function logoutAdmin() {
+  "use server";
+
+  const cookieStore = await cookies();
+  cookieStore.set(ADMIN_AUTH_COOKIE_NAME, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/admin",
+    maxAge: 0
+  });
+  redirect("/admin/login");
+}
+
 export default async function AdminPage() {
-  const user = await getCurrentUser();
+  const user = await getCurrentAdminUser();
 
   if (!isAdminUser(user)) {
     redirect(`/admin/login?reason=${user.authMode === "phone" ? "forbidden" : "login"}`);
@@ -152,9 +166,11 @@ export default async function AdminPage() {
           <h1>运营后台</h1>
           <p>{user.phone} 正在查看平台全部订单，适合排查付款、投稿和结算状态。</p>
         </div>
-        <Link className="btn secondary link-button" href="/" target="_blank" rel="noreferrer">
-          返回工作台
-        </Link>
+        <form action={logoutAdmin}>
+          <button className="btn secondary link-button" type="submit">
+            退出登录
+          </button>
+        </form>
       </header>
 
       <div className="admin-layout">

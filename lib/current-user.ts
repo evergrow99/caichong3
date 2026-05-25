@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { AUTH_COOKIE_NAME } from "@/lib/auth-utils";
+import { ADMIN_AUTH_COOKIE_NAME, AUTH_COOKIE_NAME } from "@/lib/auth-utils";
 
 export type CurrentUser = {
   id: string;
@@ -35,6 +35,17 @@ export async function getCurrentUser(): Promise<CurrentUser> {
       displayName: `用户 ${phone.slice(-4)}`,
       authMode: "phone"
     };
+  }
+
+  return mockUser;
+}
+
+export async function getCurrentAdminUser(): Promise<CurrentUser> {
+  const cookieStore = await cookies();
+  const phone = cookieStore.get(ADMIN_AUTH_COOKIE_NAME)?.value;
+
+  if (phone) {
+    return createDevPhoneUser(phone);
   }
 
   return mockUser;

@@ -1,5 +1,6 @@
 export const DEV_LOGIN_CODE = "123456";
 export const AUTH_COOKIE_NAME = "dev_phone";
+export const ADMIN_AUTH_COOKIE_NAME = "admin_phone";
 
 export function isDevLoginAllowed() {
   if (process.env.ALLOW_DEV_LOGIN === "true") return true;
