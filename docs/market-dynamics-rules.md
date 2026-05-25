@@ -1,102 +1,106 @@
-# Market Dynamics Rules
+# 市场动态规则
 
-Last updated: 2026-05-24
+最后更新：2026-05-25
 
-This document is the source of truth for homepage and discovery market dynamics. Do not change these rules unless the user explicitly asks to change the market dynamics product rules.
+本文档是首页和发现页“市场动态”的规则口径。除非用户明确要求调整市场动态产品规则，否则不要随意修改这里定义的展示、统计、过滤和状态文案规则。
 
-## Product Goal
+## 产品目标
 
-Market dynamics helps users understand what other people are publishing and feel that the platform is active. It is a public confidence layer, not an order management surface.
+市场动态用于帮助用户了解大家都在发布什么任务，并感受到平台是活跃的。
 
-## Data Sources
+它是一个面向公众的信任感展示层，不是订单管理后台，也不需要向普通用户解释过细的订单状态。
 
-Market dynamics can use both sources:
+## 数据来源
 
-- AICHONG local published orders from `orders`.
-- Caichong public market tasks from `explore_task.list`.
+市场动态可以使用两类数据：
 
-All eligible tasks are stored or read through `market_observed_tasks` for public display and statistics.
+- AICHONG 本地已发布订单，来源于 `orders`。
+- 才虫公开市场任务，来源于 `explore_task.list`。
 
-## Core Counting Principle
+所有符合展示条件的任务，都会通过 `market_observed_tasks` 存储或读取，用于公开展示和统计。
 
-Count and display tasks that were successfully published.
+## 核心统计原则
 
-The final deal result does not decide whether a task belongs in market dynamics. A task can still be shown even if it later timed out, had no submission, or was not selected, as long as it was successfully published.
+只统计和展示“发布成功”的任务。
 
-## Status Eligibility
+任务最终是否成交，不决定它是否属于市场动态。只要任务曾经发布成功，即使后续超时、无人投稿、发布人没有选择投稿，也仍然可以展示。
 
-Include:
+## 状态展示规则
+
+允许展示：
 
 - `ACTIVE`
 - `PENDING_SELECTION`
 - `COMPLETED`
-- `CLOSED`, only when there is evidence that the task was successfully published.
+- `CLOSED`，但必须有证据证明任务曾经发布成功。
 
-Exclude:
+不允许展示：
 
 - `PENDING_PAYMENT`
-- `CLOSED` caused by unpaid timeout, such as `TIMEOUT_NO_PAYMENT`.
-- `CLOSED` with no successful-publish evidence.
+- 因未付款超时关闭的 `CLOSED`，例如 `TIMEOUT_NO_PAYMENT`。
+- 没有发布成功证据的 `CLOSED`。
 
-Successful-publish evidence for `CLOSED` means at least one of:
+`CLOSED` 的发布成功证据，至少需要满足以下任意一项：
 
-- `closeReason` is `TIMEOUT_NO_SUBMISSION`.
-- `closeReason` is `TIMEOUT_NO_SELECTION`.
-- `paidAt` exists.
-- `submission_count > 0`.
+- `closeReason` 是 `TIMEOUT_NO_SUBMISSION`。
+- `closeReason` 是 `TIMEOUT_NO_SELECTION`。
+- 存在 `paidAt`。
+- `submission_count > 0`。
 
-## Public Status Labels
+## 公开状态文案
 
-Market dynamics intentionally uses simplified public status labels:
+市场动态刻意使用简化后的公开状态文案：
 
-- `ACTIVE` and `PENDING_SELECTION` show as `进行中`.
-- `COMPLETED` shows as `已完成`.
-- Eligible `CLOSED` also shows as `已完成`.
+- `ACTIVE` 和 `PENDING_SELECTION` 显示为 `进行中`。
+- `COMPLETED` 显示为 `已完成`。
+- 符合展示条件的 `CLOSED` 也显示为 `已完成`。
 
-Do not expose detailed close reasons in market cards or market detail drawers. Users do not need to distinguish completed by selection from ended after a successful publication lifecycle.
+市场卡片和详情抽屉不要展示具体关闭原因。用户不需要区分“发布人采用投稿后完成”和“发布成功后自然结束/关闭”这类细节。
 
-## Content Filters
+## 内容过滤规则
 
-Exclude tasks that are not suitable for public display:
+不适合公开展示的任务需要过滤：
 
-- Empty or too-short descriptions, currently fewer than 10 characters.
-- Obvious testing or integration content, including phrases such as `测试任务`, `测试接单`, `测试支付`, `支付流程`, `不用接单`, `真实接口`, `接口联调`, `联调使用`, `小额测试任务`.
-- Internal test users and demo users.
+- 空描述或过短描述，目前少于 10 个字符的任务不展示。
+- 明显测试或联调内容，包括但不限于：`测试任务`、`测试接单`、`测试支付`、`支付流程`、`不用接单`、`真实接口`、`接口联调`、`联调使用`、`小额测试任务`。
+- 内部测试用户和演示用户发布的任务。
 
-Keep brand and sensitive-word replacement before public display. Do not expose Caichong integration wording in the user-facing market copy.
+公开展示前，需要继续做品牌词和敏感词替换。用户侧市场文案不要暴露才虫集成、接口、平台代理等内部机制。
 
-## Categories
+## 任务分类
 
-Market dynamics uses four public task categories:
+市场动态只使用四个公开任务分类：
 
 - 文案
 - 图片
 - 声音
 - 视频
 
-The `全部` tab is displayed as `发现` but keeps the same all-items logic.
+`全部` 标签在界面上显示为 `发现`，但逻辑仍然是展示全部符合条件的任务。
 
-## Statistics
+## 统计数据
 
-Homepage statistics use the same public eligibility rules as the market list.
+首页发单统计和市场任务列表使用同一套公开展示规则。
 
-Show:
+展示指标包括：
 
 - 今日发单
 - 本月发单
 - 本月发单额
 - 累计发单
 
-Statistics may include configured display baselines, but the internally observed task count remains based on eligible observed rows.
+统计数据可以包含配置好的展示基数，但内部实际观测任务数量仍然以符合规则的 `market_observed_tasks` 记录为准。
 
-## Change Control
+如果后台配置了官方锚点数据，例如官方累计发单、官方本月发单、官方本月发单额，则统计应按“官方锚点 + 锚点之后新增的符合展示规则任务”计算。不要把锚点之前已经包含在官方数据里的历史任务再次叠加，避免因展示规则变化造成重复统计。
 
-Before changing any of the following, update this document first and confirm with the user:
+## 变更控制
 
-- Which statuses are included or excluded.
-- How `CLOSED` tasks are interpreted.
-- Public status labels.
-- Test-content filters.
-- Internal test-user filters.
-- Category taxonomy.
-- Statistics counting rules.
+修改以下任何规则之前，必须先更新本文档，并和用户确认：
+
+- 哪些订单状态可以展示或需要过滤。
+- 如何解释和处理 `CLOSED` 任务。
+- 市场中的公开状态文案。
+- 测试内容过滤规则。
+- 内部测试用户过滤规则。
+- 任务分类体系。
+- 发单统计口径。

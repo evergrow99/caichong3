@@ -105,6 +105,18 @@ type MarketBaselineRow = {
   month_task_count_base: number | null;
   month_amount_base: number | string | null;
   note: string | null;
+  effective_at?: string | null;
+};
+
+type MarketBaseline = {
+  taskCountBase: number;
+  amountBase: number;
+  monthTaskCountBase: number;
+  monthAmountBase: number;
+  officialTotal?: number;
+  officialMonthCount?: number;
+  officialMonthAmount?: number;
+  effectiveAt?: string;
 };
 
 type MarketStateRow = {
@@ -558,7 +570,12 @@ export async function syncMarketActivityIfStale() {
   return syncMarketActivity({ force: false });
 }
 
-async function getBaseline() {
+function getFiniteNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+async function getBaseline(): Promise<MarketBaseline> {
   const fallback = {
     taskCountBase: getNumberEnvWithLegacy(
       "CAICHONG_MARKET_DISPLAY_BASELINE_TASK_COUNT",
@@ -577,11 +594,17 @@ async function getBaseline() {
 
     try {
       const data = JSON.parse(note) as {
+        officialTotal?: unknown;
+        officialMonthCount?: unknown;
+        officialMonthAmount?: unknown;
         monthTaskCountBase?: unknown;
         monthAmountBase?: unknown;
       };
 
       return {
+        officialTotal: getFiniteNumber(data.officialTotal),
+        officialMonthCount: getFiniteNumber(data.officialMonthCount),
+        officialMonthAmount: getFiniteNumber(data.officialMonthAmount),
         monthTaskCountBase: Number(data.monthTaskCountBase ?? fallback.monthTaskCountBase),
         monthAmountBase: Number(data.monthAmountBase ?? fallback.monthAmountBase)
       };
@@ -597,7 +620,7 @@ async function getBaseline() {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("market_activity_baselines")
-    .select("task_count_base, amount_base, month_task_count_base, month_amount_base, note")
+    .select("task_count_base, amount_base, month_task_count_base, month_amount_base, note, effective_at")
     .eq("id", MARKET_BASELINE_ID)
     .maybeSingle();
 
@@ -609,7 +632,7 @@ async function getBaseline() {
     if (error.code === "42703" || Boolean(error.message?.includes("month_task_count_base"))) {
       const { data: legacyData, error: legacyError } = await supabase
         .from("market_activity_baselines")
-        .select("task_count_base, amount_base, note")
+        .select("task_count_base, amount_base, note, effective_at")
         .eq("id", MARKET_BASELINE_ID)
         .maybeSingle();
 
@@ -621,13 +644,14 @@ async function getBaseline() {
         throw new Error(`读取才虫市场基数失败：${legacyError.message}`);
       }
 
-      const legacyBaseline = legacyData as Pick<MarketBaselineRow, "task_count_base" | "amount_base" | "note"> | null;
+      const legacyBaseline = legacyData as Pick<MarketBaselineRow, "task_count_base" | "amount_base" | "note" | "effective_at"> | null;
       const noteBaseline = parseNoteBaseline(legacyBaseline?.note);
       return {
         ...fallback,
         taskCountBase: Number(legacyBaseline?.task_count_base ?? fallback.taskCountBase),
         amountBase: Number(legacyBaseline?.amount_base ?? fallback.amountBase),
-        ...noteBaseline
+        ...noteBaseline,
+        effectiveAt: legacyBaseline?.effective_at || undefined
       };
     }
 
@@ -640,12 +664,25 @@ async function getBaseline() {
     taskCountBase: Number(baseline?.task_count_base ?? fallback.taskCountBase),
     amountBase: Number(baseline?.amount_base ?? fallback.amountBase),
     monthTaskCountBase: Number(baseline?.month_task_count_base ?? noteBaseline.monthTaskCountBase ?? fallback.monthTaskCountBase),
-    monthAmountBase: Number(baseline?.month_amount_base ?? noteBaseline.monthAmountBase ?? fallback.monthAmountBase)
+    monthAmountBase: Number(baseline?.month_amount_base ?? noteBaseline.monthAmountBase ?? fallback.monthAmountBase),
+    officialTotal: noteBaseline.officialTotal,
+    officialMonthCount: noteBaseline.officialMonthCount,
+    officialMonthAmount: noteBaseline.officialMonthAmount,
+    effectiveAt: baseline?.effective_at || undefined
   };
 }
 
 function sumRows(rows: { total_price: number | string }[]) {
   return rows.reduce((total, row) => total + Number(row.total_price || 0), 0);
+}
+
+function isAfterBaseline(row: Pick<MarketObservedTaskRow, "activity_at">, baseline: MarketBaseline) {
+  if (!baseline.effectiveAt) return true;
+
+  const baselineTime = new Date(baseline.effectiveAt).getTime();
+  const activityTime = new Date(row.activity_at).getTime();
+  if (Number.isNaN(baselineTime) || Number.isNaN(activityTime)) return true;
+  return activityTime > baselineTime;
 }
 
 function mapObservedTaskToMarketItem(task: MarketObservedTaskRow): MarketFeedItem {
@@ -770,17 +807,17 @@ export async function getMarketActivitySummary(): Promise<MarketActivitySummary>
   const [todayRowsResult, monthRowsResult, totalRowsResult, recentResult] = await Promise.all([
     supabase
       .from("market_observed_tasks")
-      .select("description, total_price, status, submission_count, raw")
+      .select("description, total_price, status, submission_count, activity_at, raw")
       .gte("activity_at", todayStart)
       .lt("activity_at", tomorrowStart)
       .limit(5000),
     supabase
       .from("market_observed_tasks")
-      .select("description, total_price, status, submission_count, raw")
+      .select("description, total_price, status, submission_count, activity_at, raw")
       .gte("activity_at", monthStart)
       .lt("activity_at", nextMonthStart)
       .limit(5000),
-    supabase.from("market_observed_tasks").select("description, total_price, status, submission_count, raw").limit(5000),
+    supabase.from("market_observed_tasks").select("description, total_price, status, submission_count, activity_at, raw").limit(5000),
     supabase
       .from("market_observed_tasks")
       .select("task_id, description, total_price, status, submission_count, activity_at, raw")
@@ -842,13 +879,28 @@ export async function getMarketActivitySummary(): Promise<MarketActivitySummary>
     status: task.status,
     createdAt: task.activity_at
   })).slice(0, 5);
+  const baselineTime = baseline.effectiveAt ? new Date(baseline.effectiveAt).getTime() : NaN;
+  const baselineIsInCurrentMonth =
+    !Number.isNaN(baselineTime) && baselineTime >= new Date(monthStart).getTime() && baselineTime < new Date(nextMonthStart).getTime();
+  const monthRowsAfterBaseline = monthRows.filter((row) => isAfterBaseline(row, baseline));
+  const totalRowsAfterBaseline = totalRows.filter((row) => isAfterBaseline(row, baseline));
+  const monthOrderCount =
+    baselineIsInCurrentMonth && baseline.officialMonthCount !== undefined
+      ? baseline.officialMonthCount + monthRowsAfterBaseline.length
+      : baseline.monthTaskCountBase + monthRows.length;
+  const monthOrderAmount =
+    baselineIsInCurrentMonth && baseline.officialMonthAmount !== undefined
+      ? baseline.officialMonthAmount + sumRows(monthRowsAfterBaseline)
+      : baseline.monthAmountBase + sumRows(monthRows);
+  const totalOrderCount =
+    baseline.officialTotal !== undefined ? baseline.officialTotal + totalRowsAfterBaseline.length : baseline.taskCountBase + totalRows.length;
 
   return {
     todayOrderCount: todayRows.length,
-    monthOrderCount: baseline.monthTaskCountBase + monthRows.length,
-    totalOrderCount: baseline.taskCountBase + totalRows.length,
+    monthOrderCount,
+    totalOrderCount,
     todayOrderAmount: sumRows(todayRows),
-    monthOrderAmount: baseline.monthAmountBase + sumRows(monthRows),
+    monthOrderAmount,
     totalOrderAmount: baseline.amountBase + sumRows(totalRows),
     recentOrders,
     lastSyncedAt,
