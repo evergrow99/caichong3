@@ -1165,7 +1165,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isAttachmentTooltipSuppressed, setIsAttachmentTooltipSuppressed] = useState(false);
   const [previewLoadingUrl, setPreviewLoadingUrl] = useState<string | null>(null);
-  const [downloadingAttachmentUrl, setDownloadingAttachmentUrl] = useState<string | null>(null);
+  const [downloadStartingAttachmentUrl, setDownloadStartingAttachmentUrl] = useState<string | null>(null);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -1183,6 +1183,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const descriptionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const homeComposerFormRef = useRef<HTMLFormElement | null>(null);
   const compactComposerFormRef = useRef<HTMLFormElement | null>(null);
+  const downloadStartResetTimerRef = useRef<number | null>(null);
   const filterMenuRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const shouldPublishAfterLoginRef = useRef(false);
@@ -1688,31 +1689,25 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
   }
 
-  async function downloadAttachment(attachment: UploadedAttachment) {
-    setDownloadingAttachmentUrl(attachment.fileUrl);
+  function downloadAttachment(attachment: UploadedAttachment) {
     setError(null);
+    setDownloadStartingAttachmentUrl(attachment.fileUrl);
+    showToast("正在开始下载");
 
-    try {
-      const response = await fetch(getAttachmentDownloadUrl(attachment));
-      if (!response.ok) {
-        throw new Error("附件下载失败");
-      }
-
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = attachment.fileName || "submission-attachment";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(objectUrl);
-      setMessage("已触发下载。");
-    } catch (downloadError) {
-      setError(downloadError instanceof Error ? downloadError.message : "附件下载失败");
-    } finally {
-      setDownloadingAttachmentUrl(null);
+    if (downloadStartResetTimerRef.current) {
+      window.clearTimeout(downloadStartResetTimerRef.current);
     }
+    downloadStartResetTimerRef.current = window.setTimeout(() => {
+      setDownloadStartingAttachmentUrl(null);
+      downloadStartResetTimerRef.current = null;
+    }, 1200);
+
+    const link = document.createElement("a");
+    link.href = getAttachmentDownloadUrl(attachment);
+    link.download = attachment.fileName || "submission-attachment";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
 
   async function selectSubmission(taskId: string, submissionId: string) {
@@ -2400,6 +2395,14 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     return () => window.clearTimeout(timer);
   }, [toastMessage]);
 
+  useEffect(() => {
+    return () => {
+      if (downloadStartResetTimerRef.current) {
+        window.clearTimeout(downloadStartResetTimerRef.current);
+      }
+    };
+  }, []);
+
   return (
     <main
       className={`studio-shell ${!selectedTaskId ? "home-active" : "detail-active"} ${
@@ -3019,7 +3022,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                                       event.stopPropagation();
                                       downloadAttachment(attachment);
                                     }}
-                                    disabled={downloadingAttachmentUrl === attachment.fileUrl}
+                                    disabled={downloadStartingAttachmentUrl === attachment.fileUrl}
                                   >
                                     <Icon name="download" />
                                   </button>
@@ -3116,7 +3119,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                                           event.stopPropagation();
                                           downloadAttachment(attachment);
                                         }}
-                                        disabled={downloadingAttachmentUrl === attachment.fileUrl}
+                                        disabled={downloadStartingAttachmentUrl === attachment.fileUrl}
                                       >
                                         <Icon name="download" />
                                       </button>

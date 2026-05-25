@@ -11,6 +11,15 @@ function getSafeFilename(value: string | null) {
   return filename.replace(/["\r\n]/g, "_");
 }
 
+function encodeContentDispositionFilename(filename: string) {
+  return encodeURIComponent(filename).replace(/[()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function getContentDisposition(disposition: "attachment" | "inline", filename: string) {
+  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, "_") || "submission-attachment";
+  return `${disposition}; filename="${asciiFilename}"; filename*=UTF-8''${encodeContentDispositionFilename(filename)}`;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -43,7 +52,7 @@ export async function GET(request: Request) {
 
     const headers = new Headers({
       "Content-Type": response.headers.get("content-type") || "application/octet-stream",
-      "Content-Disposition": `${disposition}; filename="${filename}"`,
+      "Content-Disposition": getContentDisposition(disposition, filename),
       "Cache-Control": "private, no-store"
     });
     const contentLength = response.headers.get("content-length");
