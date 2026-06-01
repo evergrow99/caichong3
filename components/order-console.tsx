@@ -953,11 +953,11 @@ function PlatformActivityPanel({
           <strong>{isLoading ? "--" : formatActivityAmount(activity?.todayOrderAmount ?? 0)}</strong>
         </div>
         <div className="platform-metric">
-          <span>本月发单</span>
+          <span>近30天发单</span>
           <strong>{isLoading ? "--" : activity?.monthOrderCount ?? 0}</strong>
         </div>
         <div className="platform-metric">
-          <span>本月发单额</span>
+          <span>近30天发单额</span>
           <strong>{isLoading ? "--" : formatActivityAmount(activity?.monthOrderAmount ?? 0)}</strong>
         </div>
         {shouldShowTotalMetric ? (
@@ -994,8 +994,8 @@ function MarketHomePreviewPanel({ feed: initialFeed, summary }: MarketHomePrevie
   const filterSentinelRef = useRef<HTMLDivElement | null>(null);
   const marketStats = [
     ["今日发单", summary.todayOrderCount.toLocaleString("zh-CN")],
-    ["本月发单", summary.monthOrderCount.toLocaleString("zh-CN")],
-    ["本月发单额", formatMarketPreviewAmount(summary.monthOrderAmount)],
+    ["近30天发单", summary.monthOrderCount.toLocaleString("zh-CN")],
+    ["近30天发单额", formatMarketPreviewAmount(summary.monthOrderAmount)],
     ["累计发单", summary.totalOrderCount.toLocaleString("zh-CN")]
   ];
   const previewItems = feed.items;

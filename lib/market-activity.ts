@@ -252,12 +252,14 @@ function getChinaPeriodBounds(now = new Date()) {
   const year = chinaNow.getUTCFullYear();
   const month = chinaNow.getUTCMonth();
   const date = chinaNow.getUTCDate();
+  const nowIso = now.toISOString();
+  const last30DaysStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
   return {
     todayStart: new Date(Date.UTC(year, month, date) - chinaOffsetMs).toISOString(),
     tomorrowStart: new Date(Date.UTC(year, month, date + 1) - chinaOffsetMs).toISOString(),
-    monthStart: new Date(Date.UTC(year, month, 1) - chinaOffsetMs).toISOString(),
-    nextMonthStart: new Date(Date.UTC(year, month + 1, 1) - chinaOffsetMs).toISOString()
+    last30DaysStart,
+    nowIso
   };
 }
 
@@ -800,7 +802,7 @@ export async function getMarketActivitySummary(): Promise<MarketActivitySummary>
   }
 
   const supabase = createSupabaseServiceClient();
-  const { todayStart, tomorrowStart, monthStart, nextMonthStart } = getChinaPeriodBounds();
+  const { todayStart, tomorrowStart, last30DaysStart, nowIso } = getChinaPeriodBounds();
   const baseline = await getBaseline();
   const lastSyncedAt = await getLastSyncedAt();
 
@@ -814,8 +816,8 @@ export async function getMarketActivitySummary(): Promise<MarketActivitySummary>
     supabase
       .from("market_observed_tasks")
       .select("description, total_price, status, submission_count, activity_at, raw")
-      .gte("activity_at", monthStart)
-      .lt("activity_at", nextMonthStart)
+      .gte("activity_at", last30DaysStart)
+      .lt("activity_at", nowIso)
       .limit(5000),
     supabase.from("market_observed_tasks").select("description, total_price, status, submission_count, activity_at, raw").limit(5000),
     supabase
@@ -880,18 +882,22 @@ export async function getMarketActivitySummary(): Promise<MarketActivitySummary>
     createdAt: task.activity_at
   })).slice(0, 5);
   const baselineTime = baseline.effectiveAt ? new Date(baseline.effectiveAt).getTime() : NaN;
-  const baselineIsInCurrentMonth =
-    !Number.isNaN(baselineTime) && baselineTime >= new Date(monthStart).getTime() && baselineTime < new Date(nextMonthStart).getTime();
+  const baselineIsInLast30Days =
+    !Number.isNaN(baselineTime) && baselineTime >= new Date(last30DaysStart).getTime() && baselineTime < new Date(nowIso).getTime();
   const monthRowsAfterBaseline = monthRows.filter((row) => isAfterBaseline(row, baseline));
   const totalRowsAfterBaseline = totalRows.filter((row) => isAfterBaseline(row, baseline));
   const monthOrderCount =
-    baselineIsInCurrentMonth && baseline.officialMonthCount !== undefined
+    baselineIsInLast30Days && baseline.officialMonthCount !== undefined
       ? baseline.officialMonthCount + monthRowsAfterBaseline.length
-      : baseline.monthTaskCountBase + monthRows.length;
+      : baselineIsInLast30Days
+        ? baseline.monthTaskCountBase + monthRows.length
+        : monthRows.length;
   const monthOrderAmount =
-    baselineIsInCurrentMonth && baseline.officialMonthAmount !== undefined
+    baselineIsInLast30Days && baseline.officialMonthAmount !== undefined
       ? baseline.officialMonthAmount + sumRows(monthRowsAfterBaseline)
-      : baseline.monthAmountBase + sumRows(monthRows);
+      : baselineIsInLast30Days
+        ? baseline.monthAmountBase + sumRows(monthRows)
+        : sumRows(monthRows);
   const totalOrderCount =
     baseline.officialTotal !== undefined ? baseline.officialTotal + totalRowsAfterBaseline.length : baseline.taskCountBase + totalRows.length;
 
