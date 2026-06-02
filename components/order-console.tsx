@@ -31,8 +31,9 @@ type UploadedAttachment = {
 type AttachmentPreviewModal = {
   attachment: UploadedAttachment;
   title: string;
-  kind: "image" | "text" | "unsupported";
+  kind: "loading" | "image" | "text" | "unsupported";
   content?: string;
+  isLoading?: boolean;
   url?: string;
 };
 
@@ -843,11 +844,7 @@ function getSubmissionNotice(task: PublishTask, visibleSubmissionCount: number) 
   const submissionCount = Math.max(visibleSubmissionCount, getSubmissionCount(task));
 
   if (task.status === "COMPLETED") {
-    return {
-      tone: "normal" as const,
-      title: "已采用投稿，任务完成",
-      body: "你已采用其中一份投稿，订单已完成。"
-    };
+    return null;
   }
 
   if (task.status === "CLOSED") {
@@ -1164,7 +1161,6 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [isPaymentSuccessNoticeOpen, setIsPaymentSuccessNoticeOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isAttachmentTooltipSuppressed, setIsAttachmentTooltipSuppressed] = useState(false);
-  const [previewLoadingUrl, setPreviewLoadingUrl] = useState<string | null>(null);
   const [downloadStartingAttachmentUrl, setDownloadStartingAttachmentUrl] = useState<string | null>(null);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -1192,6 +1188,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const hasCheckedPendingPaymentRouteRef = useRef(false);
   const selectedTaskIdRef = useRef<string | null>(null);
   const detailRequestSeqRef = useRef(0);
+  const previewRequestSeqRef = useRef(0);
   const [isCompactComposerVisible, setIsCompactComposerVisible] = useState(false);
   const [isCompactComposerExpanded, setIsCompactComposerExpanded] = useState(false);
   const [usesShortCompactPrompt, setUsesShortCompactPrompt] = useState(false);
@@ -1233,6 +1230,10 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
   const hasUnreadSubmissionsAcrossTasks = visibleTasks.some(hasUnreadSubmissions);
   const selectedTaskSubmissionNotice = selectedTask ? getSubmissionNotice(selectedTask, submissions.length) : null;
+  const visibleSubmissions =
+    selectedTask?.status === "COMPLETED"
+      ? [...submissions].sort((left, right) => Number(Boolean(right.selected)) - Number(Boolean(left.selected)))
+      : submissions;
   const selectedTaskReadableDescription = selectedTask ? getReadableTaskDescription(selectedTask.description) : "";
   const shouldCollapseTaskDescription =
     selectedTaskReadableDescription.length > TASK_DESCRIPTION_COLLAPSE_THRESHOLD ||
@@ -1381,6 +1382,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   function updateSelectedTask(taskId: string | null) {
     selectedTaskIdRef.current = taskId;
     setError(null);
+    setMessage(null);
     if (!taskId) {
       detailRequestSeqRef.current += 1;
       setIsDetailLoading(false);
@@ -1646,6 +1648,32 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     return uploaded;
   }
 
+  function closeAttachmentPreview() {
+    previewRequestSeqRef.current += 1;
+    setAttachmentPreviewModal(null);
+  }
+
+  function updateImagePreviewLoading(attachmentUrl: string, previewUrl: string, isLoading: boolean) {
+    setAttachmentPreviewModal((currentPreview) => {
+      if (currentPreview?.attachment.fileUrl !== attachmentUrl || currentPreview.url !== previewUrl || currentPreview.kind !== "image") {
+        return currentPreview;
+      }
+
+      return {
+        ...currentPreview,
+        isLoading
+      };
+    });
+  }
+
+  async function cancelPreviewBody(response: Response) {
+    try {
+      await response.body?.cancel();
+    } catch {
+      // The browser may have already closed the stream; no user-facing action needed.
+    }
+  }
+
   async function openAttachmentPreview(attachment: UploadedAttachment, title = "附件预览") {
     if (isKnownUnsupportedPreviewAttachment(attachment)) {
       setError(null);
@@ -1653,43 +1681,87 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       return;
     }
 
-    setPreviewLoadingUrl(attachment.fileUrl);
     setError(null);
+    const requestSeq = previewRequestSeqRef.current + 1;
+    previewRequestSeqRef.current = requestSeq;
+    const previewUrl = getAttachmentDownloadUrl(attachment, "inline");
+    const previewTitle = title === "附件预览" && attachment.fileName ? repairMojibakeFileName(attachment.fileName) : title;
+
+    if (isImageLikeAttachment(attachment.fileName, attachment.mimeType)) {
+      setAttachmentPreviewModal({
+        attachment,
+        title: previewTitle,
+        kind: "image",
+        url: previewUrl,
+        isLoading: true
+      });
+      return;
+    }
+
+    setAttachmentPreviewModal({
+      attachment,
+      title: previewTitle,
+      kind: "loading",
+      content: "正在读取附件内容..."
+    });
 
     try {
-      const previewUrl = getAttachmentDownloadUrl(attachment, "inline");
       const response = await fetch(previewUrl);
+      if (previewRequestSeqRef.current !== requestSeq) {
+        await cancelPreviewBody(response);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error("附件预览失败");
       }
 
       const contentType = response.headers.get("content-type") || "";
       if (isImageLikeAttachment(attachment.fileName, contentType)) {
+        await cancelPreviewBody(response);
         setAttachmentPreviewModal({
           attachment,
-          title,
+          title: previewTitle,
           kind: "image",
-          url: previewUrl
+          url: previewUrl,
+          isLoading: true
         });
         return;
       }
 
       if (isTextLikeAttachment(attachment.fileName, contentType)) {
         const text = await response.text();
+        if (previewRequestSeqRef.current !== requestSeq) {
+          return;
+        }
+
         setAttachmentPreviewModal({
           attachment,
-          title,
+          title: previewTitle,
           kind: "text",
           content: text || "文件内容为空。"
         });
         return;
       }
 
-      showToast("请下载查看");
+      await cancelPreviewBody(response);
+      setAttachmentPreviewModal({
+        attachment,
+        title: previewTitle,
+        kind: "unsupported",
+        content: "暂不支持在线预览，请下载查看。"
+      });
     } catch (previewError) {
-      setError(previewError instanceof Error ? previewError.message : "附件预览失败");
-    } finally {
-      setPreviewLoadingUrl(null);
+      if (previewRequestSeqRef.current !== requestSeq) {
+        return;
+      }
+
+      setAttachmentPreviewModal({
+        attachment,
+        title: previewTitle,
+        kind: "unsupported",
+        content: previewError instanceof Error ? previewError.message : "附件预览失败，请下载查看。"
+      });
     }
   }
 
@@ -1731,9 +1803,24 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         })
       );
 
-      setSelectedTask(task);
-      setMessage("已采用结果，任务已完成。");
-      await Promise.all([loadTasks(), loadTaskDetail(taskId)]);
+      setSelectedTask((currentTask) =>
+        currentTask?.taskId === taskId
+          ? {
+              ...currentTask,
+              ...task,
+              status: "COMPLETED",
+              updatedAt: task.updatedAt || currentTask.updatedAt || new Date().toISOString()
+            }
+          : currentTask
+      );
+      setSubmissions((currentSubmissions) =>
+        currentSubmissions.map((submission) => ({
+          ...submission,
+          selected: submission.submissionId === submissionId,
+          status: submission.submissionId === submissionId ? "approved" : submission.status === "approved" ? "rejected" : submission.status
+        }))
+      );
+      await Promise.all([loadTasks(), loadTaskDetail(taskId, { showLoading: false })]);
     } catch (selectError) {
       setError(selectError instanceof Error ? selectError.message : "采用结果失败");
     } finally {
@@ -2699,20 +2786,59 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
 
       {attachmentPreviewModal ? (
         <div className="modal-layer">
-          <button className="modal-backdrop preview-backdrop" aria-label="关闭附件预览" type="button" onClick={() => setAttachmentPreviewModal(null)} />
+          <button className="modal-backdrop preview-backdrop" aria-label="关闭附件预览" type="button" onClick={closeAttachmentPreview} />
           <section className="attachment-preview-modal" role="dialog" aria-modal="true" aria-label="附件预览">
             <div className="modal-header">
               <div>
-                <h2>附件预览</h2>
+                <h2>{attachmentPreviewModal.title}</h2>
                 {attachmentPreviewModal.attachment.fileSize ? <p>{formatFileSize(attachmentPreviewModal.attachment.fileSize)}</p> : null}
               </div>
-              <button aria-label="关闭附件预览" type="button" onClick={() => setAttachmentPreviewModal(null)}>
+              <button aria-label="关闭附件预览" type="button" onClick={closeAttachmentPreview}>
                 <Icon name="close" />
               </button>
             </div>
-            <div className="attachment-preview-modal-body">
+            <div
+              className={`attachment-preview-modal-body ${
+                attachmentPreviewModal.kind === "loading" || (attachmentPreviewModal.kind === "image" && attachmentPreviewModal.isLoading)
+                  ? "has-preview-status"
+                  : ""
+              }`}
+            >
+              {attachmentPreviewModal.kind === "loading" ? (
+                <div className="attachment-preview-status" role="status">
+                  <HeartbeatLoadingIcon />
+                  <span>{attachmentPreviewModal.content || "正在读取附件内容..."}</span>
+                </div>
+              ) : null}
               {attachmentPreviewModal.kind === "image" && attachmentPreviewModal.url ? (
-                <img src={attachmentPreviewModal.url} alt="附件预览" />
+                <>
+                  {attachmentPreviewModal.isLoading ? (
+                    <div className="attachment-preview-status" role="status">
+                      <HeartbeatLoadingIcon />
+                      <span>正在加载图片预览...</span>
+                    </div>
+                  ) : null}
+                  <img
+                    className={attachmentPreviewModal.isLoading ? "is-loading" : ""}
+                    src={attachmentPreviewModal.url}
+                    alt="附件预览"
+                    onLoad={() => updateImagePreviewLoading(attachmentPreviewModal.attachment.fileUrl, attachmentPreviewModal.url || "", false)}
+                    onError={() => {
+                      setAttachmentPreviewModal((currentPreview) => {
+                        if (currentPreview?.attachment.fileUrl !== attachmentPreviewModal.attachment.fileUrl) {
+                          return currentPreview;
+                        }
+
+                        return {
+                          attachment: currentPreview.attachment,
+                          title: currentPreview.title,
+                          kind: "unsupported",
+                          content: "图片预览失败，请下载查看。"
+                        };
+                      });
+                    }}
+                  />
+                </>
               ) : null}
               {attachmentPreviewModal.kind === "text" ? <pre>{attachmentPreviewModal.content}</pre> : null}
               {attachmentPreviewModal.kind === "unsupported" ? <p>{attachmentPreviewModal.content}</p> : null}
@@ -3063,10 +3189,12 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                       <div className="detail-header">
                         <div className="submission-heading">
                           <h3>收到投稿</h3>
-                          <span className="chip">{submissions.length} 条</span>
+                          <span className="submission-count-text">{submissions.length} 条</span>
                         </div>
                         <div className="header-actions">
-                          <span className="chip submission-status-chip">{getTaskStatusLabel(selectedTask.status)}</span>
+                          <span className={`chip submission-status-chip status-${selectedTask.status.toLowerCase().replace(/_/g, "-")}`}>
+                            {getTaskStatusLabel(selectedTask.status)}
+                          </span>
                           {selectedTask.status === "ACTIVE" && selectedTask.deadlineAt ? (
                             <span className="submission-deadline">提交期截止 {formatDateTimeToMinute(selectedTask.deadlineAt)}</span>
                           ) : null}
@@ -3083,71 +3211,80 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                         </div>
                       ) : null}
 
-                      {submissions.length > 0 ? (
-                        submissions.map((submission) => (
-                          <article className="submission-item" key={submission.submissionId}>
-                            <div className="task-topline">
-                              <h4 className="submission-title">{submission.agentName || "服务方"}</h4>
-                              {submission.selected ? <span className="chip success">已采用</span> : null}
-                            </div>
-                            <p>{submission.contentSummary || submission.content}</p>
-                            <div className="meta-row">
-                              {submission.createdAt ? <span className="chip">投稿时间 {formatDateTimeToMinute(submission.createdAt)}</span> : null}
-                              {submission.attachments?.length ? <span className="chip">附件 {submission.attachments.length}</span> : null}
-                            </div>
-                            {submission.attachments?.length ? (
-                              <div className="attachment-list compact-list">
-                                {submission.attachments.map((attachment, index) => (
-                                  <div
-                                    className="attachment-item linked attachment-row"
-                                    key={`${attachment.fileUrl}-${index}`}
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={() => openAttachmentPreview(attachment)}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter" || event.key === " ") {
-                                        event.preventDefault();
-                                        openAttachmentPreview(attachment);
-                                      }
-                                    }}
+                      {visibleSubmissions.length > 0 ? (
+                        visibleSubmissions.map((submission) => {
+                          const isSelectedSubmission = Boolean(submission.selected);
+                          const isUnselectedCompletedSubmission = selectedTask.status === "COMPLETED" && !isSelectedSubmission;
+
+                          return (
+                            <article
+                              className={`submission-item ${isSelectedSubmission ? "selected-submission" : ""} ${
+                                isUnselectedCompletedSubmission ? "unselected-completed-submission" : ""
+                              }`}
+                              key={submission.submissionId}
+                            >
+                              <div className="task-topline">
+                                <h4 className="submission-title">{submission.agentName || "服务方"}</h4>
+                                {isSelectedSubmission ? <span className="chip success submission-selected-badge">已采用</span> : null}
+                              </div>
+                              <p>{submission.contentSummary || submission.content}</p>
+                              <div className="meta-row">
+                                {submission.createdAt ? <span className="submission-time-text">投稿时间 {formatDateTimeToMinute(submission.createdAt)}</span> : null}
+                              </div>
+                              {submission.attachments?.length ? (
+                                <div className="attachment-list compact-list">
+                                  {submission.attachments.map((attachment, index) => (
+                                    <div
+                                      className="attachment-item linked attachment-row"
+                                      key={`${attachment.fileUrl}-${index}`}
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={() => openAttachmentPreview(attachment)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                          event.preventDefault();
+                                          openAttachmentPreview(attachment);
+                                        }
+                                      }}
+                                    >
+                                      <AttachmentVisual attachment={attachment} />
+                                      <div className="attachment-copy">
+                                        <strong>{getAttachmentOriginalName(attachment, index)}</strong>
+                                        {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
+                                      </div>
+                                      <div className="attachment-actions">
+                                        <button
+                                          className="attachment-download-button"
+                                          aria-label={`下载 ${getAttachmentOriginalName(attachment, index)}`}
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            downloadAttachment(attachment);
+                                          }}
+                                          disabled={downloadStartingAttachmentUrl === attachment.fileUrl}
+                                        >
+                                          <Icon name="download" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {canSelectSubmission(selectedTask) ? (
+                                <div className="actions compact">
+                                  <button
+                                    className="btn primary"
+                                    type="button"
+                                    onClick={() => setSelectConfirmation({ taskId: selectedTask.taskId, submissionId: submission.submissionId })}
+                                    disabled={Boolean(selectingSubmissionId) || submission.selected}
                                   >
-                                    <AttachmentVisual attachment={attachment} />
-                                    <div className="attachment-copy">
-                                      <strong>{getAttachmentOriginalName(attachment, index)}</strong>
-                                      {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
-                                    </div>
-                                    <div className="attachment-actions">
-                                      <button
-                                        className="attachment-download-button"
-                                        aria-label={`下载 ${getAttachmentOriginalName(attachment, index)}`}
-                                        type="button"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          downloadAttachment(attachment);
-                                        }}
-                                        disabled={downloadStartingAttachmentUrl === attachment.fileUrl}
-                                      >
-                                        <Icon name="download" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : null}
-                            {canSelectSubmission(selectedTask) ? (
-                              <div className="actions compact">
-                                <button
-                                  className="btn primary"
-                                  type="button"
-                                  onClick={() => setSelectConfirmation({ taskId: selectedTask.taskId, submissionId: submission.submissionId })}
-                                  disabled={Boolean(selectingSubmissionId) || submission.selected}
-                                >
-                                  {submission.selected ? "已采用" : selectingSubmissionId === submission.submissionId ? "采用中" : "采用投稿"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </article>
-                        ))
+                                    {submission.selected ? "已采用" : selectingSubmissionId === submission.submissionId ? "采用中" : "采用投稿"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </article>
+                          );
+                        })
                       ) : (
                         <div className="empty-state submission-empty-state">
                           <span className="submission-empty-mark" aria-hidden="true" />

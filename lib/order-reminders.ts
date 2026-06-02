@@ -153,6 +153,10 @@ function shouldSendSixHourReminder(order: ReminderOrderRow) {
   return remainingMs > 0 && remainingMs <= 6 * 60 * 60 * 1000;
 }
 
+function getReminderSubmissionCount(order: ReminderOrderRow) {
+  return Math.max(0, order.submission_count || 0);
+}
+
 async function listCandidateOrders() {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
@@ -246,7 +250,7 @@ function buildCandidateReminders(
       caichongSubmissionId: submission.caichong_submission_id,
       templateCode,
       templateParams: {},
-      messageText: "你的任务有新投稿，请登录查看。"
+      messageText: "您在AICHONG发布的任务收到新投稿，请进入任务详情查看投稿内容。"
     });
   }
 
@@ -255,7 +259,14 @@ function buildCandidateReminders(
 
     const phone = phonesByUserId.get(order.user_id);
     const deadline = formatReminderDeadline(order.deadline_at);
-    if (!phone || !deadline) continue;
+    const submissionCount = getReminderSubmissionCount(order);
+    if (!phone || !deadline || submissionCount <= 0) continue;
+
+    const selectionTemplateParams = {
+      count: String(submissionCount),
+      deadline
+    };
+    const selectionMessageText = `您在AICHONG发布的任务已收到${submissionCount}份投稿，请在${deadline}前进入任务详情选定投稿，超时将自动退款。`;
 
     const shouldSendDeadlineReminder = shouldSendSixHourReminder(order);
     const selectionStartedTemplateCode = getTemplateCode("SELECTION_STARTED");
@@ -267,8 +278,8 @@ function buildCandidateReminders(
         reminderType: "SELECTION_STARTED",
         deadlineAt: order.deadline_at || undefined,
         templateCode: selectionStartedTemplateCode,
-        templateParams: { deadline },
-        messageText: `你的任务已进入选择期，请在${deadline}前选择满意投稿。`
+        templateParams: selectionTemplateParams,
+        messageText: selectionMessageText
       });
     }
 
@@ -281,8 +292,8 @@ function buildCandidateReminders(
         reminderType: "SELECTION_DEADLINE_6H",
         deadlineAt: order.deadline_at || undefined,
         templateCode: deadlineTemplateCode,
-        templateParams: { deadline },
-        messageText: `你的任务选择截止时间临近，请在${deadline}前处理，超时将自动关闭并退款。`
+        templateParams: selectionTemplateParams,
+        messageText: selectionMessageText
       });
     }
   }

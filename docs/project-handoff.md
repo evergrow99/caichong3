@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-22
 
-This document is the first thing to read in a new Codex thread. Also read `DESIGN.md`, then run `git status --short --branch` before editing.
+Start new Codex threads with `docs/thread-start.md` first. Then read this document when technical handoff context is needed. Also read `DESIGN.md` for visual or UX work, then run `git status --short --branch` before editing.
 
 ## Product
 

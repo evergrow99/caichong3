@@ -4019,6 +4019,7 @@ textarea:focus-visible {
 }
 
 .attachment-preview-modal-body {
+  position: relative;
   min-height: 220px;
   overflow: auto;
   overscroll-behavior: contain;
@@ -4030,6 +4031,30 @@ textarea:focus-visible {
   padding: 14px;
 }
 
+.attachment-preview-modal-body.has-preview-status {
+  display: grid;
+  min-height: clamp(260px, 36vh, 360px);
+  place-items: center;
+  padding: 0;
+}
+
+.attachment-preview-status {
+  display: grid;
+  place-items: center;
+  gap: 14px;
+  color: rgba(229, 238, 231, 0.72);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.attachment-preview-status .heartbeat-loader {
+  width: 34px;
+  height: 34px;
+  color: rgba(103, 232, 120, 0.9);
+}
+
 .attachment-preview-modal-body img {
   display: block;
   max-width: 100%;
@@ -4038,6 +4063,10 @@ textarea:focus-visible {
   object-fit: contain;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
+}
+
+.attachment-preview-modal-body img.is-loading {
+  display: none;
 }
 
 .attachment-preview-modal-body pre {
@@ -4849,9 +4878,21 @@ textarea:focus-visible {
 }
 
 .submission-section .submission-item {
+  position: relative;
+  overflow: hidden;
   border-color: rgba(20, 113, 95, 0.18);
   background: #ffffff;
   padding: 18px;
+}
+
+.submission-section .submission-item.selected-submission {
+  border-color: rgba(20, 113, 95, 0.48);
+  background: linear-gradient(180deg, rgba(223, 247, 227, 0.82), #ffffff);
+  box-shadow: 0 16px 42px rgba(20, 113, 95, 0.1);
+}
+
+.submission-section .submission-item.unselected-completed-submission {
+  opacity: 0.78;
 }
 
 .submission-item p {
@@ -5200,7 +5241,13 @@ textarea:focus-visible {
   margin: 0;
 }
 
-.studio-shell.detail-active .submission-heading > .chip,
+.studio-shell.detail-active .submission-count-text {
+  color: rgba(202, 213, 204, 0.66);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+}
+
 .studio-shell.detail-active .submission-status-chip {
   font-size: 12px;
   line-height: 1;
@@ -5211,6 +5258,16 @@ textarea:focus-visible {
   border-color: rgba(103, 232, 120, 0.26);
   background: rgba(103, 232, 120, 0.1);
   color: #bdf8c5;
+}
+
+.studio-shell.detail-active .submission-status-chip.status-completed {
+  border-color: rgba(103, 232, 120, 0.6);
+  background: rgba(103, 232, 120, 0.18);
+  color: #eaffed;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 8px 14px;
+  box-shadow: 0 0 0 1px rgba(103, 232, 120, 0.1), 0 10px 28px rgba(103, 232, 120, 0.12);
 }
 
 .studio-shell.detail-active .submission-deadline {
@@ -5364,6 +5421,30 @@ textarea:focus-visible {
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.045);
   box-shadow: none;
+}
+
+.studio-shell.detail-active .submission-section .submission-item.selected-submission {
+  border-color: rgba(103, 232, 120, 0.46);
+  background:
+    radial-gradient(circle at 88% 0%, rgba(103, 232, 120, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(42, 58, 47, 0.82), rgba(18, 27, 22, 0.96));
+  box-shadow:
+    0 22px 70px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.studio-shell.detail-active .submission-section .submission-item.unselected-completed-submission {
+  opacity: 0.62;
+}
+
+.studio-shell.detail-active .submission-section .submission-item.unselected-completed-submission:hover {
+  opacity: 0.82;
+}
+
+.studio-shell.detail-active .submission-selected-badge {
+  border-color: rgba(103, 232, 120, 0.58);
+  background: rgba(103, 232, 120, 0.18);
+  color: #dfffe4;
 }
 
 .studio-shell.detail-active .btn.primary {

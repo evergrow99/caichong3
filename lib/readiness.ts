@@ -128,7 +128,8 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
         hasOrderReminderSms && orderReminderTableReady
           ? "已配置投稿和选择期提醒模板，提醒日志表可读取。"
           : "订单短信提醒还未完整配置，选择期仍需要运营人工兜底。",
-      action: "配置三个订单提醒模板码，并执行 supabase/migrations/0009_order_sms_reminders.sql。"
+      action:
+        "配置新投稿模板码，并将同一个选定投稿模板码填入两个选择提醒环境变量；同时执行 supabase/migrations/0009_order_sms_reminders.sql。"
     }
   ];
 

@@ -25,8 +25,8 @@ ORDER_REMINDER_CRON_SECRET=<专门给外部订单提醒 Cron 使用的随机字�
 ALLOW_DEV_LOGIN=false
 AUTH_SMS_PROVIDER=<真实短信服务标识，接入后填写>
 ALIYUN_SMS_SUBMISSION_TEMPLATE_CODE=<收到投稿提醒模板 Code>
-ALIYUN_SMS_SELECTION_STARTED_TEMPLATE_CODE=<进入选择期提醒模板 Code>
-ALIYUN_SMS_SELECTION_DEADLINE_TEMPLATE_CODE=<选择截止前 6 小时提醒模板 Code>
+ALIYUN_SMS_SELECTION_STARTED_TEMPLATE_CODE=<选定投稿提醒模板 Code>
+ALIYUN_SMS_SELECTION_DEADLINE_TEMPLATE_CODE=<同一个选定投稿提醒模板 Code>
 ORDER_REMINDER_SYNC_INTERVAL_MINUTES=5
 ORDER_REMINDER_SUBMISSION_LOOKBACK_HOURS=48
 ```
@@ -72,13 +72,15 @@ Authorization: Bearer <CRON_SECRET>
 supabase/migrations/0009_order_sms_reminders.sql
 ```
 
-然后配置 3 个阿里云短信模板：
+短信模板和触发规则以 `docs/order-sms-reminders.md` 为准。阿里云只需要申请 2 个短信模板 Code：新投稿提醒 1 个、选定投稿提醒 1 个。当前系统仍保留 3 个环境变量，其中“进入选择期”和“选择期结束前 6 小时提醒”填同一个选定投稿模板 Code。
 
 ```text
-你的任务有新投稿，请登录查看。
-你的任务已进入选择期，请在${deadline}前选择满意投稿。
-你的任务选择截止时间临近，请在${deadline}前处理，超时将自动关闭并退款。
+您在AICHONG发布的任务收到新投稿，请进入任务详情查看投稿内容。
+您在AICHONG发布的任务已收到${count}份投稿，请在${deadline}前进入任务详情选定投稿，超时将自动退款。
+您在AICHONG发布的任务已收到${count}份投稿，请在${deadline}前进入任务详情选定投稿，超时将自动退款。
 ```
+
+注意：`count` 是新模板变量，`lib/order-reminders.ts` 必须给选择提醒同时传入 `count` 和 `deadline`。
 
 部署后每 5 分钟调用：
 

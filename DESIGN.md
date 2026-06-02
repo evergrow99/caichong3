@@ -1,59 +1,61 @@
-# AICHONG Design Direction
+# AICHONG 设计方向
 
-## Product Position
+## 产品定位
 
-AICHONG is a task-publishing workspace for people who do not operate their own Agent. The product lets a human describe a creative need, attach reference files, pay for the task, receive multiple submissions, preview attachments, and choose the best result.
+AICHONG 是一个面向普通用户的任务发布工作台，适合那些自己不直接操作 Agent 的人。用户可以描述创作需求、上传参考附件、支付任务费用、收到多份投稿、预览投稿附件，并选择最满意的结果。
 
-The demand-side experience should feel like AICHONG owns the user relationship. Do not expose integration mechanics, partner platform wording, API language, or internal sync concepts in the core user journey. The `/work` guide may mention external Agent onboarding when the user explicitly wants to receive tasks.
+需求方体验应该让用户感觉自己是在使用 AICHONG，而不是在操作外部平台。核心用户流程中不要暴露集成机制、合作平台话术、API 语言或内部同步概念。只有当用户明确想接任务时，`/work` 指南才可以提到外部 Agent 接入。
 
-## Visual Feeling
+## 视觉感受
 
-The interface should feel calm, capable, and slightly futuristic: dark surfaces, controlled green accents, quiet hierarchy, and a focused writing area. It can borrow the confidence of trading/AI workspaces without looking like a crypto exchange, dashboard, or official partner site.
+界面应该是安静、可靠、略带未来感的：深色表面、克制的绿色强调、清晰但不吵闹的信息层级，以及聚焦的输入区域。它可以借鉴交易工具或 AI 工作台的专业感，但不要做成加密货币交易所、传统数据看板或官方合作平台页面。
 
-Use dark green-black as atmosphere, green as the primary action and active state, and off-white text for clarity. Avoid bright neon overload, decorative blobs, heavy gradients, or marketing-style clutter.
+使用深绿黑作为整体氛围，绿色用于主操作和激活状态，偏暖的白色用于保证文字清晰。避免过亮霓虹、大量装饰光斑、厚重渐变或营销页式堆砌。
 
-## Layout Principles
+## 布局原则
 
-- Keep the left sidebar operational and compact: brand, new task, history, market rules, receiver guide, and account.
-- The homepage first viewport is a product workspace, not a landing page. The task input is the main object.
-- Default homepage hierarchy: welcome headline, one-line explanation, low-friction task publisher, then examples.
-- Task detail pages remain functional and status-led. Do not visually hide deadlines, submissions, attachments, or selection actions.
-- Static informational pages such as `/market-rules` and `/work` should still feel like AICHONG: dark green-black surfaces, restrained green accents, shared navigation, and concise product copy. Do not use a separate white marketplace/landing-page style for them.
-- Use cards for repeated items and modals. Avoid nesting cards inside cards.
+- 左侧栏保持操作型和紧凑：品牌、发布新任务、历史任务、市场规则、接单指南和账号。
+- 首页首屏是产品工作台，不是落地页。任务输入框是页面主对象。
+- 首页默认层级：欢迎标题、一句说明、低摩擦发单入口，然后是示例。
+- 任务详情页保持功能导向和状态导向。不要弱化截止时间、投稿、附件或选定操作。
+- `/market-rules`、`/work` 这类静态信息页也要保持 AICHONG 的感觉：深绿黑表面、克制绿色强调、统一导航、简洁产品文案。不要为它们单独使用白底市场页或营销页风格。
+- 卡片只用于重复项和弹窗。避免卡片套卡片。
 
-## Task Publisher
+## 发单输入区
 
-The publisher should feel like a natural command/input surface, similar to Codex-style composition areas:
+发单输入区应该像一个自然的指令/输入表面，接近 Codex 式的组合输入体验：
 
-- One calm container, not several boxed fields.
-- The textarea should feel integrated into the container, with minimal border treatment.
-- Attachment, price, and publish controls should read as a compact action bar.
-- The publish button is the visual anchor; secondary controls stay quiet until hover/focus.
-- Validation should happen through clear messages, not permanent instructional clutter.
+- 一个安静的整体容器，而不是多个割裂的表单框。
+- 文本输入区应该融入容器，边框处理尽量轻。
+- 附件、价格和发布控件应该像一组紧凑的操作栏。
+- 发布按钮是视觉锚点；次级控件在未悬停或未聚焦时保持安静。
+- 校验提示用清楚的消息表达，不要长期堆放说明性文字。
 
-## Color Roles
+## 颜色角色
 
-- Page background: near-black green, with very subtle grid or depth.
-- Primary action: fresh green, high contrast against dark surfaces.
-- Main surface: deep charcoal-green with soft shadow.
-- Secondary surface: transparent or very low-contrast dark tint.
-- Text: warm off-white for headings, desaturated green-gray for supporting text.
-- Warning/danger: keep red/orange clear and readable even in dark mode.
+- 页面背景：接近黑色的深绿，并带有非常轻微的网格或层次感。
+- 主操作：清新的绿色，在深色表面上有足够对比度。
+- 主表面：深炭绿，带柔和阴影。
+- 次级表面：透明或低对比度深色。
+- 文字：标题使用偏暖白色，辅助文字使用低饱和绿灰色。
+- 警告/危险：红色和橙色在深色模式下也要清楚可读。
 
-## Typography
+## 字体和文案
 
-Use large, confident headings on the homepage, but keep operational pages compact. Body copy should be short and practical. Do not over-explain mechanics. Prefer user-facing language over platform/internal terms.
+首页可以使用更大、更有信心的标题，但操作型页面要保持紧凑。正文应该短、实用，不要过度解释机制。优先使用用户能理解的话，而不是平台或内部术语。
 
-## Interaction States
+## 交互状态
 
-All clickable controls need hover and focus states. Disabled states should be visible but not visually noisy. Login-gated actions may open the login modal; do not block users from drafting a task before login.
+所有可点击控件都需要悬停和聚焦状态。禁用状态要清楚，但不要吵。需要登录的操作可以打开登录弹窗；不要阻止用户在登录前先草拟任务。
 
-Icons should come from the approved Figma icon library (`yWZTSzMR9aC8l9DBljE31C`) and keep one consistent line style, stroke weight, and optical size. Do not hand-draw or imitate replacement icons in code.
+界面需要图标时，必须从已批准的 Figma 图标库（`yWZTSzMR9aC8l9DBljE31C`）中选择。Codex 不得手绘图标、编写一次性 SVG 图标、在代码里模仿替代图标，或自行切换到另一套图标风格。
 
-## Do Not
+如果已批准的 Figma 图标库中没有合适图标，Codex 必须先说明缺少什么图标，并询问主人决定。Codex 不得默默创建替代品。
 
-- Do not reveal Caichong or integration wording in demand-side task creation, order detail, or history surfaces.
-- Do not add decorative UI that competes with the task input.
-- Do not use many borders around the publisher; prefer spacing, contrast, and soft surface depth.
-- Do not change backend contracts, task status mapping, payment flow, or API behavior when making visual changes.
-- Do not use hand-drawn placeholder icons when a matching icon should be selected from the Figma icon library.
+## 禁止事项
+
+- 不要在需求方的发单、订单详情或历史任务界面暴露才虫或集成相关话术。
+- 不要添加会抢任务输入区注意力的装饰 UI。
+- 不要给发单输入区加大量边框；优先用间距、对比和柔和表面层次来组织。
+- 做视觉修改时，不要改变后端契约、任务状态映射、支付流程或 API 行为。
+- 当图标应该从已批准的 Figma 图标库中选择时，不要使用手绘占位图标、一次性 SVG 图标或自行挑选的替代图标库。
