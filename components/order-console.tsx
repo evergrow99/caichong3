@@ -128,6 +128,7 @@ const PAYMENT_POLL_SLOW_INTERVAL_MS = 60 * 1000;
 const PAYMENT_CONFIRMATION_SLOW_MS = 15 * 1000;
 const PAYMENT_CONFIRMATION_FAILURE_THRESHOLD = 2;
 const DETAIL_FETCH_TIMEOUT_MS = 8 * 1000;
+const DETAIL_FETCH_TIMEOUT_ERROR = "读取超时，请点击刷新重试";
 const COMPOSER_TEXTAREA_MIN_HEIGHT = 52;
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 192;
 const TASK_DESCRIPTION_COLLAPSE_THRESHOLD = 320;
@@ -948,7 +949,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
 
 function getRequestErrorMessage(error: unknown, fallback: string) {
   if (error instanceof DOMException && error.name === "AbortError") {
-    return "读取超时，请点击刷新重试";
+    return DETAIL_FETCH_TIMEOUT_ERROR;
   }
 
   return error instanceof Error ? error.message : fallback;
@@ -1239,6 +1240,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const paymentPollInFlightRef = useRef(false);
   const hasCheckedPendingPaymentRouteRef = useRef(false);
   const selectedTaskIdRef = useRef<string | null>(null);
+  const tasksRef = useRef<PublishTask[]>([]);
   const detailRequestSeqRef = useRef(0);
   const previewRequestSeqRef = useRef(0);
   const submissionsCacheRef = useRef<Map<string, Submission[]>>(new Map());
@@ -1246,6 +1248,10 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [isCompactComposerVisible, setIsCompactComposerVisible] = useState(false);
   const [isCompactComposerExpanded, setIsCompactComposerExpanded] = useState(false);
   const [usesShortCompactPrompt, setUsesShortCompactPrompt] = useState(false);
+
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
 
   useEffect(() => {
     if (!attachmentPreviewModal || typeof window === "undefined") {
@@ -1684,6 +1690,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         await fetch("/api/tasks?page=1&pageSize=20")
       );
       const nextTasks = data.tasks || [];
+      tasksRef.current = nextTasks;
       setTasks(nextTasks);
       const activeTaskId = selectedTaskIdRef.current;
       const activeTask = activeTaskId ? nextTasks.find((task) => task.taskId === activeTaskId) : null;
@@ -1888,11 +1895,14 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       }
 
       const fallbackTask =
+        tasksRef.current.find((task) => task.taskId === taskId) ||
         tasks.find((task) => task.taskId === taskId) ||
         (selectedTask?.taskId === taskId ? selectedTask : null);
       const detailErrorMessage = getRequestErrorMessage(detailError, "订单详情读取失败");
       if (!options.suppressError && !fallbackTask) {
         setError(detailErrorMessage);
+      } else if (fallbackTask && detailErrorMessage === DETAIL_FETCH_TIMEOUT_ERROR) {
+        setError(null);
       }
       setSelectedTask((currentTask) => fallbackTask || (currentTask?.taskId === taskId ? currentTask : null));
       setSubmissions([]);
@@ -3479,6 +3489,48 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                             </button>
                           ) : null}
                         </div>
+
+                        {selectedTask.attachments?.length ? (
+                          <div className="task-attachment-section">
+                            <div className="attachment-list compact-list">
+                              {selectedTask.attachments.map((attachment, index) => (
+                                <div
+                                  className="attachment-item linked attachment-row"
+                                  key={`${attachment.fileUrl}-${index}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => openAttachmentPreview(attachment, getAttachmentOriginalName(attachment, index))}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      openAttachmentPreview(attachment, getAttachmentOriginalName(attachment, index));
+                                    }
+                                  }}
+                                >
+                                  <AttachmentVisual attachment={attachment} />
+                                  <div className="attachment-copy">
+                                    <strong>{getAttachmentOriginalName(attachment, index)}</strong>
+                                    {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
+                                  </div>
+                                  <div className="attachment-actions">
+                                    <button
+                                      className="attachment-download-button"
+                                      aria-label={`下载 ${getAttachmentOriginalName(attachment, index)}`}
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        downloadAttachment(attachment);
+                                      }}
+                                      disabled={downloadStartingAttachmentUrl === attachment.fileUrl}
+                                    >
+                                      <Icon name="download" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                       </section>
 
                       <div className="task-detail-meta-line">
@@ -3502,48 +3554,6 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                           <span className="task-detail-time-text">{getCloseReasonLabel(selectedTask.closeReason)}</span>
                         ) : null}
                       </div>
-
-                      {selectedTask.attachments?.length ? (
-                        <div className="task-attachment-section">
-                          <div className="attachment-list compact-list">
-                            {selectedTask.attachments.map((attachment, index) => (
-                              <div
-                                className="attachment-item linked attachment-row"
-                                key={`${attachment.fileUrl}-${index}`}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => openAttachmentPreview(attachment, getAttachmentOriginalName(attachment, index))}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
-                                    event.preventDefault();
-                                    openAttachmentPreview(attachment, getAttachmentOriginalName(attachment, index));
-                                  }
-                                }}
-                              >
-                                <AttachmentVisual attachment={attachment} />
-                                <div className="attachment-copy">
-                                  <strong>{getAttachmentOriginalName(attachment, index)}</strong>
-                                  {attachment.fileSize ? <span>{formatFileSize(attachment.fileSize)}</span> : null}
-                                </div>
-                                <div className="attachment-actions">
-                                  <button
-                                    className="attachment-download-button"
-                                    aria-label={`下载 ${getAttachmentOriginalName(attachment, index)}`}
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      downloadAttachment(attachment);
-                                    }}
-                                    disabled={downloadStartingAttachmentUrl === attachment.fileUrl}
-                                  >
-                                    <Icon name="download" />
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
 
                       {selectedTask.status === "PENDING_PAYMENT" ? (
                         <div

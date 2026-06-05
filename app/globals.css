@@ -3979,7 +3979,11 @@ textarea:focus-visible {
 .task-attachment-section {
   display: grid;
   gap: 10px;
-  margin-top: 18px;
+  margin-top: 0;
+}
+
+.task-attachment-section .attachment-list.compact-list {
+  margin: 0;
 }
 
 .task-attachment-section h5 {
