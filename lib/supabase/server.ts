@@ -1,4 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+let serviceClient: SupabaseClient | null = null;
 
 function requireEnv(name: string) {
   const value = process.env[name];
@@ -11,12 +13,18 @@ function requireEnv(name: string) {
 }
 
 export function createSupabaseServiceClient() {
-  return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+  if (serviceClient) {
+    return serviceClient;
+  }
+
+  serviceClient = createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
     auth: {
       autoRefreshToken: false,
       persistSession: false
     }
   });
+
+  return serviceClient;
 }
 
 export function hasSupabaseServiceConfig() {

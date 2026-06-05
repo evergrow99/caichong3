@@ -589,10 +589,11 @@ textarea:focus-visible {
 }
 
 .sidebar-empty {
-  border: 1px dashed #dfe5df;
-  border-radius: 14px;
-  background: #ffffff;
-  padding: 16px;
+  align-self: start;
+  border: 1px dashed rgba(153, 255, 183, 0.12);
+  border-radius: 12px;
+  background: transparent;
+  padding: 10px 8px;
   text-align: center;
 }
 
@@ -2185,12 +2186,7 @@ textarea:focus-visible {
 }
 
 .attachment-control input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  font-size: 0;
+  display: none;
 }
 
 .attachment-control-group {
@@ -3012,8 +3008,8 @@ textarea:focus-visible {
 }
 
 .studio-shell.home-active .sidebar-empty {
-  border-color: rgba(153, 255, 183, 0.16);
-  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(153, 255, 183, 0.12);
+  background: transparent;
 }
 
 .studio-shell.home-active .sidebar-task-meta span {
@@ -3255,6 +3251,7 @@ textarea:focus-visible {
   box-sizing: border-box;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -3272,6 +3269,7 @@ textarea:focus-visible {
   max-width: none;
   flex: initial;
   min-width: 0;
+  padding-right: 40px;
 }
 
 .studio-shell.home-active .composer-attachments::-webkit-scrollbar {
@@ -3331,6 +3329,8 @@ textarea:focus-visible {
 }
 
 .studio-shell.home-active .attachment-remove-button {
+  top: 8px;
+  right: 8px;
   border-color: rgba(153, 255, 183, 0.14);
   background: rgba(17, 24, 20, 0.98);
   color: rgba(237, 247, 239, 0.72);
@@ -4840,6 +4840,21 @@ textarea:focus-visible {
   border-color: rgba(103, 232, 120, 0.28);
 }
 
+.payment-status-panel.confirming {
+  border-color: rgba(103, 232, 120, 0.42);
+  background: rgba(10, 42, 22, 0.78);
+}
+
+.payment-status-action.secondary {
+  background: rgba(244, 251, 244, 0.06);
+  color: #dff9e4;
+}
+
+.payment-status-action.secondary:hover:not(:disabled) {
+  border-color: rgba(103, 232, 120, 0.78);
+  background: rgba(103, 232, 120, 0.16);
+}
+
 @media (max-width: 720px) {
   .payment-status-panel {
     grid-template-columns: 1fr;
@@ -5804,6 +5819,76 @@ textarea:focus-visible {
   overflow: hidden;
 }
 
+.admin-operation-panel {
+  margin-bottom: 18px;
+}
+
+.admin-stat-groups {
+  display: grid;
+  gap: 0;
+  padding: 4px 24px 24px;
+}
+
+.admin-stat-group {
+  display: grid;
+  grid-template-columns: minmax(140px, 190px) minmax(0, 1fr);
+  gap: 18px;
+  border-top: 1px solid var(--line);
+  padding: 18px 0;
+}
+
+.admin-stat-group:first-child {
+  border-top: 0;
+}
+
+.admin-stat-group-heading {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  font-family: ui-sans-serif, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.admin-stat-group-heading strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.admin-stat-group-heading span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 18px;
+}
+
+.admin-stat-grid div {
+  min-width: 0;
+  font-family: ui-sans-serif, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.admin-stat-grid span {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-stat-grid strong {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
 .admin-users-panel {
   margin-bottom: 18px;
 }
@@ -6574,6 +6659,15 @@ textarea:focus-visible {
   }
 
   .admin-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-stat-group {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .admin-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -7494,11 +7588,6 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
-.home-market-category-tabs button small {
-  color: rgba(202, 213, 204, 0.5);
-  font-size: 12px;
-}
-
 .home-market-category-tabs button:hover,
 .home-market-category-tabs button.active {
   border-color: rgba(103, 232, 120, 0.3);
@@ -7518,12 +7607,9 @@ textarea:focus-visible {
 }
 
 .home-market-card-grid {
-  column-count: 4;
-  column-gap: 12px;
-}
-
-.home-market-card-grid.is-loading {
-  opacity: 0.58;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .home-market-empty {
@@ -7534,7 +7620,8 @@ textarea:focus-visible {
 }
 
 .home-market-card-grid .market-task-card-compact {
-  margin-bottom: 12px;
+  min-width: 0;
+  margin: 0;
 }
 
 .compact-publish-bar {
@@ -7936,19 +8023,11 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
-@media (max-width: 1280px) {
-  .home-market-card-grid {
-    column-count: 3;
-  }
-}
-
-@media (max-width: 980px) {
-  .home-market-card-grid {
-    column-count: 2;
-  }
-}
-
 @media (max-width: 1180px) {
+  .home-market-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .market-overview-grid,
   .market-flow-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7968,8 +8047,16 @@ textarea:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .home-market-use-case-bar {
+    position: static;
+    top: auto;
+    z-index: auto;
+    overflow: visible;
+  }
+
   .home-market-use-case-bar::before,
   .studio-shell.sidebar-collapsed .home-market-use-case-bar::before {
+    display: none;
     left: 0;
   }
 
@@ -8119,13 +8206,11 @@ textarea:focus-visible {
     width: 100%;
     min-width: 0;
     align-items: flex-start;
-    top: calc(var(--mobile-top-offset) + var(--mobile-control-size) + 8px - var(--mobile-content-offset));
-    overflow: hidden;
   }
 
   .home-market-use-case-bar::before,
   .studio-shell.sidebar-collapsed .home-market-use-case-bar::before {
-    top: calc(var(--mobile-top-offset) + var(--mobile-control-size) + 8px);
+    top: auto;
   }
 
   .home-market-category-tabs {
@@ -8139,9 +8224,9 @@ textarea:focus-visible {
   }
 
   .home-market-card-grid {
-    column-count: 1;
     width: 100%;
     max-width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .compact-publish-bar,

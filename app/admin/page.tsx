@@ -13,6 +13,9 @@ import { getTaskStatusLabel, taskStatusRules } from "@/lib/task-rules";
 import { listAdminUsers } from "@/lib/user-profile";
 
 type AdminOrderPreview = Awaited<ReturnType<typeof listAdminOrders>>["orders"][number];
+type AdminUserPreview = Awaited<ReturnType<typeof listAdminUsers>>[number];
+
+const publishedTaskStatuses = new Set(["ACTIVE", "PENDING_SELECTION", "COMPLETED"]);
 
 function getOrderAction(order: { status: string; submissionCount: number }) {
   if (order.status === "PENDING_PAYMENT") {
@@ -97,6 +100,73 @@ function formatDate(value?: string) {
   }).format(new Date(value));
 }
 
+function isWithinDays(value: string | undefined, days: number) {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return false;
+  return time >= Date.now() - days * 24 * 60 * 60 * 1000;
+}
+
+function formatRate(part: number, total: number) {
+  if (total <= 0) return "0%";
+  return `${((part / total) * 100).toFixed(1).replace(".0", "")}%`;
+}
+
+function formatAverage(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return value.toFixed(1).replace(".0", "");
+}
+
+function getUserOperationStats(users: AdminUserPreview[], realOrders: AdminOrderPreview[]) {
+  const userIdsWithOrders = new Set(realOrders.map((order) => order.userId));
+  const recent7UserIds = new Set(realOrders.filter((order) => isWithinDays(order.createdAt, 7)).map((order) => order.userId));
+  const recent30UserIds = new Set(realOrders.filter((order) => isWithinDays(order.createdAt, 30)).map((order) => order.userId));
+  const orderCountsByUser = realOrders.reduce<Record<string, number>>((counts, order) => {
+    counts[order.userId] = (counts[order.userId] || 0) + 1;
+    return counts;
+  }, {});
+
+  return {
+    totalUsers: users.length,
+    todayUsers: users.filter((adminUser) => isWithinDays(adminUser.createdAt, 1)).length,
+    recent7Users: users.filter((adminUser) => isWithinDays(adminUser.createdAt, 7)).length,
+    recent30Users: users.filter((adminUser) => isWithinDays(adminUser.createdAt, 30)).length,
+    usersWithOrders: userIdsWithOrders.size,
+    usersWithoutOrders: Math.max(users.length - userIdsWithOrders.size, 0),
+    orderConversionRate: formatRate(userIdsWithOrders.size, users.length),
+    recent7OrderUsers: recent7UserIds.size,
+    recent30OrderUsers: recent30UserIds.size,
+    repeatOrderUsers: Object.values(orderCountsByUser).filter((count) => count >= 2).length,
+    averageOrdersPerUser: formatAverage(realOrders.length / Math.max(users.length, 1))
+  };
+}
+
+function getTaskOperationStats(realOrders: AdminOrderPreview[]) {
+  const publishedOrders = realOrders.filter((order) => publishedTaskStatuses.has(order.status));
+  const submittedOrders = realOrders.filter((order) => order.submissionCount > 0);
+  const totalSubmissionCount = realOrders.reduce((total, order) => total + order.submissionCount, 0);
+  const totalAmount = realOrders.reduce((total, order) => total + order.price, 0);
+
+  return {
+    totalTasks: realOrders.length,
+    todayTasks: realOrders.filter((order) => isWithinDays(order.createdAt, 1)).length,
+    recent7Tasks: realOrders.filter((order) => isWithinDays(order.createdAt, 7)).length,
+    recent30Tasks: realOrders.filter((order) => isWithinDays(order.createdAt, 30)).length,
+    publishedTasks: publishedOrders.length,
+    publishRate: formatRate(publishedOrders.length, realOrders.length),
+    pendingPaymentTasks: realOrders.filter((order) => order.status === "PENDING_PAYMENT").length,
+    activeTasks: realOrders.filter((order) => order.status === "ACTIVE").length,
+    pendingSelectionTasks: realOrders.filter((order) => order.status === "PENDING_SELECTION").length,
+    completedTasks: realOrders.filter((order) => order.status === "COMPLETED").length,
+    submittedTasks: submittedOrders.length,
+    submittedTaskRate: formatRate(submittedOrders.length, realOrders.length),
+    totalSubmissionCount,
+    averageSubmissionsPerTask: formatAverage(totalSubmissionCount / Math.max(realOrders.length, 1)),
+    noSubmissionActiveTasks: realOrders.filter((order) => order.status === "ACTIVE" && order.submissionCount === 0).length,
+    totalAmount
+  };
+}
+
 async function runPlatformHeartbeat() {
   "use server";
 
@@ -147,8 +217,12 @@ export default async function AdminPage() {
       return 0;
     })
     .slice(0, 5);
+  const realOrders = orders.filter((order) => order.isRealCaichongTask);
+  const userOperationStats = getUserOperationStats(users, realOrders);
+  const taskOperationStats = getTaskOperationStats(realOrders);
   const adminNavItems = [
     { href: "#overview", label: "概览", meta: `${summary.totalOrders} 单` },
+    { href: "#operation-overview", label: "运营概览", meta: `${taskOperationStats.recent30Tasks} 单/30天` },
     { href: "#readiness", label: "上线检查", meta: readiness.ready ? "正常" : "待处理" },
     { href: "#users", label: "用户列表", meta: `${users.length} 人` },
     { href: "#selection-reminders", label: "采用提醒", meta: `${selectionReminderOrders.length} 条` },
@@ -200,6 +274,163 @@ export default async function AdminPage() {
                 立即同步全部订单
               </button>
             </form>
+          </section>
+
+          <section className="panel admin-panel admin-operation-panel" id="operation-overview">
+            <div className="panel-header">
+              <h2>AICHONG 运营概览</h2>
+              <p>只读统计，基于后台本地真实用户和已关联真实才虫任务的 AICHONG 订单；不包含旧测试单。</p>
+            </div>
+
+            <div className="admin-stat-groups">
+              <article className="admin-stat-group">
+                <div className="admin-stat-group-heading">
+                  <strong>用户增长</strong>
+                  <span>注册与发单转化</span>
+                </div>
+                <div className="admin-stat-grid">
+                  <div>
+                    <span>总注册用户</span>
+                    <strong>{userOperationStats.totalUsers}</strong>
+                  </div>
+                  <div>
+                    <span>今日新增</span>
+                    <strong>{userOperationStats.todayUsers}</strong>
+                  </div>
+                  <div>
+                    <span>近7天新增</span>
+                    <strong>{userOperationStats.recent7Users}</strong>
+                  </div>
+                  <div>
+                    <span>近30天新增</span>
+                    <strong>{userOperationStats.recent30Users}</strong>
+                  </div>
+                  <div>
+                    <span>已发单用户</span>
+                    <strong>{userOperationStats.usersWithOrders}</strong>
+                  </div>
+                  <div>
+                    <span>未发单用户</span>
+                    <strong>{userOperationStats.usersWithoutOrders}</strong>
+                  </div>
+                  <div>
+                    <span>注册到发单</span>
+                    <strong>{userOperationStats.orderConversionRate}</strong>
+                  </div>
+                  <div>
+                    <span>人均发单</span>
+                    <strong>{userOperationStats.averageOrdersPerUser}</strong>
+                  </div>
+                </div>
+              </article>
+
+              <article className="admin-stat-group">
+                <div className="admin-stat-group-heading">
+                  <strong>任务发布</strong>
+                  <span>AICHONG 本地真实任务</span>
+                </div>
+                <div className="admin-stat-grid">
+                  <div>
+                    <span>总任务</span>
+                    <strong>{taskOperationStats.totalTasks}</strong>
+                  </div>
+                  <div>
+                    <span>今日下单</span>
+                    <strong>{taskOperationStats.todayTasks}</strong>
+                  </div>
+                  <div>
+                    <span>近7天下单</span>
+                    <strong>{taskOperationStats.recent7Tasks}</strong>
+                  </div>
+                  <div>
+                    <span>近30天下单</span>
+                    <strong>{taskOperationStats.recent30Tasks}</strong>
+                  </div>
+                  <div>
+                    <span>已进入发布状态</span>
+                    <strong>{taskOperationStats.publishedTasks}</strong>
+                  </div>
+                  <div>
+                    <span>发布状态占比</span>
+                    <strong>{taskOperationStats.publishRate}</strong>
+                  </div>
+                  <div>
+                    <span>待支付</span>
+                    <strong>{taskOperationStats.pendingPaymentTasks}</strong>
+                  </div>
+                  <div>
+                    <span>累计金额</span>
+                    <strong>¥{taskOperationStats.totalAmount.toFixed(2)}</strong>
+                  </div>
+                </div>
+              </article>
+
+              <article className="admin-stat-group">
+                <div className="admin-stat-group-heading">
+                  <strong>投稿与履约</strong>
+                  <span>判断供给和待处理压力</span>
+                </div>
+                <div className="admin-stat-grid">
+                  <div>
+                    <span>进行中</span>
+                    <strong>{taskOperationStats.activeTasks}</strong>
+                  </div>
+                  <div>
+                    <span>待选择</span>
+                    <strong>{taskOperationStats.pendingSelectionTasks}</strong>
+                  </div>
+                  <div>
+                    <span>已完成</span>
+                    <strong>{taskOperationStats.completedTasks}</strong>
+                  </div>
+                  <div>
+                    <span>有投稿任务</span>
+                    <strong>{taskOperationStats.submittedTasks}</strong>
+                  </div>
+                  <div>
+                    <span>有投稿占比</span>
+                    <strong>{taskOperationStats.submittedTaskRate}</strong>
+                  </div>
+                  <div>
+                    <span>总投稿数</span>
+                    <strong>{taskOperationStats.totalSubmissionCount}</strong>
+                  </div>
+                  <div>
+                    <span>单均投稿</span>
+                    <strong>{taskOperationStats.averageSubmissionsPerTask}</strong>
+                  </div>
+                  <div>
+                    <span>提交期无人投稿</span>
+                    <strong>{taskOperationStats.noSubmissionActiveTasks}</strong>
+                  </div>
+                </div>
+              </article>
+
+              <article className="admin-stat-group compact">
+                <div className="admin-stat-group-heading">
+                  <strong>近期活跃</strong>
+                  <span>看用户是否持续发单</span>
+                </div>
+                <div className="admin-stat-grid">
+                  <div>
+                    <span>近7天发单用户</span>
+                    <strong>{userOperationStats.recent7OrderUsers}</strong>
+                  </div>
+                  <div>
+                    <span>近30天发单用户</span>
+                    <strong>{userOperationStats.recent30OrderUsers}</strong>
+                  </div>
+                  <div>
+                    <span>复购用户</span>
+                    <strong>{userOperationStats.repeatOrderUsers}</strong>
+                  </div>
+                  <div>
+                    <span>需提醒采用</span>
+                    <strong>{selectionReminderOrders.length}</strong>
+                  </div>
+                </div>
+              </article>
+            </div>
           </section>
 
           <section className="admin-metrics" aria-label="后台概览指标">

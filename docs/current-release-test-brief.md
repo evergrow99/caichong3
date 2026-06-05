@@ -582,3 +582,512 @@ ALIYUN_SMS_SELECTION_DEADLINE_TEMPLATE_CODE=SMS_507405080
 是否建议上线：建议补测后上线
 一句话理由：基础硬检查、只读接口、公开页面冒烟和关键代码/文档规则均通过；但真实有投稿订单的附件预览、已采用投稿视觉、真实短信发送链路和真实采用投稿结算路径因风险边界未触发，需人工补测后再交上线总控。
 ```
+
+### 补充测试结论 2026-06-03 运营概览与付款确认体验
+
+```text
+测试线程名称：Codex 本地补充测试线程
+对应上线摘要：2026-06-03 后台运营概览、付款确认与附件兜底补充测试
+测试环境：本地 main 工作区；Next dev server http://localhost:3000；本地 HTTP/HTML 只读验证
+测试时间：2026-06-03 11:09 CST
+
+测试范围：
+按当前本地未提交改动验证：后台只读运营概览、前台付款确认状态、订单详情超时兜底、附件图片预览失败兜底和不支持预览文件识别。未触发真实付款、采用投稿、结算、退款、真实短信；未修改生产配置。
+
+通过路径：
+- 基础硬检查：git diff --check 通过。
+- npm run lint 通过，0 error，13 warning；warning 仍为既有 <img> 与 React Hook dependency 提示。
+- npm run build 通过。
+- 本地 dev server 启动前发现旧 Next dev server 占用 3000 但不可达；已停止旧进程并重启，http://localhost:3000 可正常响应。
+- /api/health/readiness 返回 ready=true，所有 readiness items 均为 ok。
+- /api/platform/activity 返回当前滚动统计：todayOrderCount=1、monthOrderCount=37、monthOrderAmount=806.8、totalOrderCount=126；说明当前数据已随真实/本地活动变化，不沿用 2026-06-02 旧数值。
+- 首页 HTML 返回 200，服务端 HTML 中包含 AICHONG、今日发单、近30天发单、近30天发单额、累计发单等文案。
+- 后台登录页 HTML 返回 200，包含运营后台、管理员手机号、验证码、获取验证码、进入后台等文案。
+- 同一 cookie 文件下先前台 dev-login 普通用户 13231636325，再后台 admin-login 管理员 18201500661；cookie 同时存在 Path=/ 的 dev_phone 和 Path=/admin 的 admin_phone。
+- 同一 cookie 下 /api/me 仍返回普通用户 13231636325，后台登录没有覆盖前台身份。
+- 同一 cookie 下 /admin 返回 200，后台 HTML 中新增 AICHONG 运营概览、用户增长、任务发布、投稿与履约、近期活跃、近30天发单用户、需提醒采用等模块。
+- 后台运营概览说明文案明确为只读统计，基于后台本地真实用户和已关联真实才虫任务的 AICHONG 订单，不包含旧测试单。
+- 前台代码路径核对通过：付款后显示“正在确认付款结果/正在努力确认结果”，慢确认时提供“刷新状态”；订单详情 fetch 增加 8 秒超时并显示“读取超时，请点击刷新重试”；图片预览失败显示“图片预览失败，请下载查看。”；psd/ai/fig/sketch/xd 识别为不支持在线预览。
+
+发现的问题：
+- Browser 工具访问本地 URL 被工具安全策略拦截，因此未能完成可视化截图和浏览器 console error 检查。本轮改用本地 HTTP/HTML、接口和代码路径核对。
+
+已修复的问题：
+无。本轮测试未发现需要修业务代码的问题；仅恢复 next dev 造成的 next-env.d.ts 生成文件漂移。
+
+仍未验证：
+- 未完成真实浏览器可视回归和 console error 检查，原因是 Browser 工具拒绝访问本地 URL。
+- 未端到端模拟真实付款返回后的支付确认状态变化；避免触发真实付款。
+- 未用真实有投稿附件订单端到端点击图片、文本和不支持预览附件。
+- 未主动采用真实投稿验证完成态 UI；采用投稿会触发结算风险，需主人单独确认。
+- 未发送真实短信，也未切换 Vercel、阿里云、Supabase、才虫、Cron 的生产配置。
+- 未做真实手机端视觉回归。
+
+残留风险：
+- 后台“今日”统计当前按 24 小时窗口计算，不是自然日零点口径；如果上线总控要求自然日口径，需要单独确认后改。
+- 浏览器工具未能进入页面，视觉布局、客户端 hydration 后状态和 console error 仍建议主人或上线总控用真实浏览器补看一次。
+- 付款确认体验仍依赖才虫支付状态同步和用户实际支付回跳；本轮只覆盖本地代码路径和只读页面。
+- 附件最终加载速度仍受才虫附件源站、代理服务和用户网络影响。
+
+是否涉及真实付款/结算/短信：
+否。未触发真实付款、退款、采用投稿、结算或真实短信。
+
+是否改动了代码：
+否。未修改业务代码；仅写回本测试结论文档。next-env.d.ts 的 dev server 副作用已恢复。
+
+改动文件：
+docs/current-release-test-brief.md
+
+验证命令和结果：
+- git status --short --branch：main...origin/main，存在本轮未提交改动。
+- git diff --check：通过。
+- npm run lint：通过，0 error，13 warning。
+- npm run build：通过。
+- curl http://localhost:3000/api/health/readiness：ready=true，所有 items ok。
+- curl http://localhost:3000/api/platform/activity：todayOrderCount=1、monthOrderCount=37、monthOrderAmount=806.8、totalOrderCount=126。
+- curl http://localhost:3000、curl http://localhost:3000/admin/login：均返回 200。
+- curl dev-login/admin-login + /api/me + /admin：前后台 cookie 隔离通过，/admin 返回 200。
+- rg /tmp/aichong-admin.html：后台运营概览关键文案命中。
+- rg components/order-console.tsx：付款确认、详情超时、图片失败、设计文件不支持预览等关键代码路径命中。
+
+是否建议上线：建议补测后上线
+一句话理由：基础硬检查、readiness、登录隔离、后台运营概览服务端渲染和关键代码路径均通过；但真实浏览器可视/console、真实付款确认、真实附件预览、真实采用投稿和真实短信链路仍未验证，应交上线总控或主人补测高风险/真实场景。
+```
+
+### 收口测试摘要 2026-06-05 后台运营统计
+
+```text
+测试线程名称：Codex 本地后台运营统计收口线程
+对应上线摘要：2026-06-05 后台 AICHONG 运营统计收口测试
+测试环境：本地 main 工作区；Next dev server http://localhost:3000；本地管理员登录只读验证
+测试时间：2026-06-05 14:11 CST
+
+测试范围：
+本次只收口后台 /admin 新增的 AICHONG 运营统计：用户增长、任务发布、投稿与履约、近期活跃。统计基于后台已读取的本地真实用户和已关联真实才虫任务的 AICHONG 订单，排除旧测试单。未触发真实付款、采用投稿、结算、退款、真实短信；未修改生产配置。
+
+通过路径：
+- git diff --check 通过。
+- npm run lint 通过，0 error，13 warning；warning 为既有 <img> 与 React Hook dependency 提示。
+- npm run build 通过，/admin 仍为动态服务端页面。
+- 本地管理员登录接口 POST /api/admin/login 使用管理员手机号 18201500661 和本地开发验证码 123456 返回成功。
+- 同一临时 cookie 访问 /admin 返回 HTTP 200。
+- /admin 服务端 HTML 命中 AICHONG 运营概览、只读统计、用户增长、任务发布、投稿与履约、近期活跃、近7天新增、近30天新增、注册到发单、近30天发单用户等关键文案。
+- 当前后台统计渲染出的关键值：总注册用户 6、今日新增 0、近7天新增 0、近30天新增 6、注册到发单 100%、总任务 22、近7天下单 4、近30天下单 21、已进入发布状态 9、待选择 1、需提醒采用 1。
+- 后台运营统计说明文案明确为只读统计，基于后台本地真实用户和已关联真实才虫任务的 AICHONG 订单，不包含旧测试单。
+
+发现的问题：
+- 当前工作区除后台运营统计外，还有多处未提交改动：前台页面、多个 API route、order-console、market nav、Supabase server、package.json、logo 资源和 scripts/check-ui-regressions.mjs。它们不是本次后台统计收口新增，需上线总控单独复核归因。
+- /admin 异常日志中仍可见 task.detail warn、heartbeat.user warn、task.list error 等历史/当前外部同步问题。本次统计页面能渲染，但这些日志说明才虫详情/用户心跳仍可能存在外部服务或数据同步波动。
+
+已修复的问题：
+无。本轮收口未修改业务代码，只写回本测试摘要。
+
+仍未验证：
+- 未做真实浏览器登录后的视觉截图和 console error 检查；本轮以本地 HTTP/HTML 和构建检查为主。
+- 未验证线上 /admin。
+- 未验证真实付款、采用投稿、结算、退款或真实短信。
+- 未验证前台未提交改动的完整回归；本次只覆盖后台运营统计。
+
+残留风险：
+- 后台“今日/近7天/近30天”目前按 24 小时窗口计算，不是中国自然日零点口径；如需自然日口径需单独确认后改。
+- 后台运营统计依赖当前 listAdminOrders/listAdminUsers 已读取数据，适合当前运营观察；如果未来订单/用户量明显增大，应改为专门的后台聚合查询。
+- 工作区存在多处未归因改动，不建议只凭本次后台统计收口直接整包上线。
+
+是否涉及真实付款/结算/短信：
+否。未触发真实付款、退款、采用投稿、结算或真实短信。
+
+是否改动了代码：
+否。本轮收口未改代码；仅写回测试摘要。工作区已有代码改动保持原样。
+
+改动文件：
+docs/current-release-test-brief.md
+
+验证命令和结果：
+- git diff --check：通过。
+- npm run lint：通过，0 error，13 warning。
+- npm run build：通过。
+- curl POST http://127.0.0.1:3000/api/admin/login：返回管理员用户 18201500661。
+- curl http://127.0.0.1:3000/admin：HTTP_STATUS:200。
+- rg /tmp/aichong-admin-20260605.html：后台运营统计关键文案命中。
+- git status --short：显示当前工作区有多处未提交改动，包含 app/admin/page.tsx、app/globals.css、docs/current-release-test-brief.md 以及其他前台/API/资源文件。
+
+是否建议上线：建议补测后上线
+一句话理由：后台运营统计本地只读渲染和硬检查通过；但当前工作区混有多处未归因改动，且线上后台、真实浏览器视觉/console、高风险资金/短信/结算链路未验证，不建议仅凭本轮摘要直接整包上线。
+```
+
+### 收口测试摘要 2026-06-05 首页市场动态筛选与排布
+
+```text
+测试线程名称：Codex 本地首页市场动态收口线程
+对应上线摘要：2026-06-05 首页市场动态 tab 交互、数量隐藏与卡片排布修复
+测试环境：本地 main 工作区；Next dev server http://localhost:3000；本地接口和内置浏览器冒烟
+测试时间：2026-06-05 14:30 CST
+
+测试范围：
+本次只收口首页市场动态区域：分类 tab 隐藏数量统计、tab 切换不再每次重新请求市场接口、卡片排布从 CSS columns 改为 grid，修复图片/视频分类少量卡片时纵向堆叠像 bug 的问题。未触发真实付款、采用投稿、结算、退款、真实短信；未修改生产配置。
+
+通过路径：
+- git diff --check 通过。
+- npm run lint 通过，0 error，13 warning；warning 为既有 <img> 与 React Hook dependency 提示。
+- npm run build 通过。
+- next-env.d.ts 无生成差异。
+- 本地服务 http://localhost:3000 可访问，HEAD / 返回 200。
+- /api/platform/activity 返回当前市场统计：todayOrderCount=0、monthOrderCount=37、monthOrderAmount=806.8、totalOrderCount=126。
+- /api/platform/market?pageSize=20 返回 total=16；分类计数为发现 16、文案 7、图片 4、声音 3、视频 2。注意：接口仍保留 count 给内部数据使用，但首页 tab UI 已不展示这些数量。
+- 浏览器打开首页成功，页面标题为 AICHONG，包含“今天想做点什么？”。
+- 首页分类 tab 文案为发现、文案、图片、声音、视频；DOM 中 .home-market-category-tabs button small 数量为 0，确认数量统计已从首页 tab 隐藏。
+- 浏览器点击“图片”tab 后，active=图片，显示 4 张卡片，坐标为 2 列 x 2 行。
+- 浏览器点击“视频”tab 后，active=视频，显示 2 张卡片，坐标为同一行左右排列，不再竖向堆在左侧。
+- 浏览器 console error 检查为空。
+- 代码核对：components/order-console.tsx 中首页 tab 切换改为本地 setActiveCategory + initialFeed.items 过滤，不再在 changeCategory 内 fetch /api/platform/market。
+- 代码核对：app/globals.css 中 .home-market-card-grid 使用 CSS grid，首页卡片取消 columns 的向下填充行为。
+
+发现的问题：
+- 首页市场动态首屏数据仍依赖首次接口/服务端数据加载；浏览器冒烟中卡片从 0 到展示需要等待数秒。tab 切换本身已本地化，但“首页第一次加载市场动态慢”如果要进一步优化，需要单独做首屏 loading/缓存/骨架屏方案。
+- 当前工作区仍有多处未提交改动，包含后台、前台 API、order-console、资源文件和脚本。本摘要只覆盖首页市场动态筛选与排布，不替其他改动给出上线结论。
+
+已修复的问题：
+- 首页市场动态 tab 上的数量统计已隐藏。
+- tab 切换慢的问题已缩小到本地筛选，不再每次点击都重新请求市场接口。
+- 图片/视频分类少量卡片时的瀑布流式竖向堆叠已改为 grid 排布。
+
+仍未验证：
+- 未验证线上首页。
+- 未验证真实手机 Safari；本轮使用本地内置浏览器做窄屏冒烟。
+- 未验证真实付款、采用投稿、结算、退款或真实短信。
+- 未验证当前工作区其他未归因改动的完整整包回归。
+
+残留风险：
+- 首页市场动态首屏接口慢时，用户仍可能短暂看到空态或等待卡片出现；本轮修复的是 tab 切换和排布，不包含首屏数据加载性能专项。
+- 当前工作区混有多处未提交改动，不建议只凭本摘要直接整包上线。
+
+是否涉及真实付款/结算/短信：
+否。未触发真实付款、退款、采用投稿、结算或真实短信。
+
+是否改动了代码：
+是。本轮相关代码改动在 components/order-console.tsx 和 app/globals.css；本摘要写回 docs/current-release-test-brief.md。工作区其他既有改动保持原样。
+
+改动文件：
+- components/order-console.tsx
+- app/globals.css
+- docs/current-release-test-brief.md
+
+验证命令和结果：
+- git diff --check：通过。
+- npm run lint：通过，0 error，13 warning。
+- npm run build：通过。
+- curl -sI http://localhost:3000：HTTP 200。
+- curl -s http://localhost:3000/api/platform/activity：返回 todayOrderCount=0、monthOrderCount=37、monthOrderAmount=806.8、totalOrderCount=126。
+- curl -s 'http://localhost:3000/api/platform/market?pageSize=20'：返回 total=16，categories count 为 16/7/4/3/2。
+- Browser 首页冒烟：分类数量未展示；图片 4 张为 2x2；视频 2 张同一行；console error 为空。
+
+是否建议上线：建议补测后上线
+一句话理由：首页市场动态 tab 切换、数量隐藏和卡片排布本地验证通过；但首屏市场数据加载仍可能慢，且当前工作区混有多处未归因改动，仍需上线总控按整包范围复核。
+```
+
+## 本轮待测摘要 2026-06-05 当前未提交功能包
+
+给测试线程的简单指令：
+
+```text
+请读取 docs/current-release-test-brief.md 的“本轮待测摘要 2026-06-05 当前未提交功能包”，按整包范围测试；能修小问题就修，但涉及钱、短信、结算、权限、生产配置的动作先问主人。最后把测试结论写回本节下方的“本轮整包测试结论”小节。
+```
+
+### 上线总控当前结论
+
+上线结论：需补测后上线。
+
+说明：
+- 当前结论不是“可上线”，也不触发部署、提交、推送或生产配置变更。
+- 本轮本地硬检查和局部收口摘要已有通过记录，但当前工作区仍是混合包，必须按整包复测后再做最终上线判断。
+- 本轮收口不改业务代码；仅把交接摘要整理成测试线程可执行的待测摘要。
+
+### 本轮版本状态
+
+- 分支：`main`
+- 当前提交：`afc25d1 Prepare release bundle updates`
+- 当前 `main` 与 `origin/main` 对齐，没有本地领先提交。
+- 当前工作区有未提交改动，测试范围以当前本地工作区为准。
+- 当前未提交改动包含后台、首页、前台订单、多个 API route、资源文件、脚本和文档，不能按单一功能直接上线。
+
+### 本轮包含变更
+
+1. 后台运营统计
+- `/admin` 新增 AICHONG 运营概览。
+- 展示用户增长、任务发布、投稿与履约、近期活跃等只读统计。
+- 统计基于后台本地真实用户和已关联真实才虫任务的 AICHONG 订单；不包含旧测试单。
+
+2. 首页市场动态体验
+- 首页市场动态首屏读取增加快速兜底和客户端补充读取。
+- 分类 tab 改为本地筛选，不再每次点击都重新请求市场接口。
+- 首页分类 tab 隐藏数量统计。
+- 市场卡片排布从 CSS columns 改为 grid，避免图片/视频分类少量卡片纵向堆叠。
+- 底部发布小窗口临时隐藏，用于先验证首页体验；这不是删除发布入口的最终产品决定。
+
+3. 付款与订单详情体验
+- 付款后展示 `正在确认付款结果` / `正在努力确认结果`。
+- 慢确认时提供 `刷新状态`。
+- 订单详情读取增加超时兜底；已有本地任务可展示时，不再显示“已先显示本地订单”的红色错误条。
+- 详情读取仍应保留本地已有任务信息，避免页面误落空态。
+
+4. 投稿与附件读取
+- 投稿读取改为本地优先，可通过 `refresh=1` 显式远程刷新。
+- 投稿附件可通过 `includeAttachments=1` 按需补水。
+- `submissionCount > 0` 时，空投稿数组不能作为有效缓存。
+- 投稿列表读取期间显示 `正在读取投稿...`。
+- 设计类文件识别为不支持在线预览。
+- 图片预览失败提示 `图片预览失败，请下载查看。`
+- 附件上传取消后，不应残留附件说明或浏览器原生“未选择任何文件”提示。
+
+5. API 读取策略
+- `/api/platform/activity` 支持 `sync=0`，用于只读读取市场统计时不主动触发同步。
+- `/api/platform/market` 支持 `sync=0`，用于只读读取市场列表时不主动触发同步。
+- `/api/tasks` 支持 `refresh=1` 显式刷新；默认优先读取本地订单分页，减少列表页被远程刷新拖慢。
+- `/api/tasks/[taskId]/submissions` 支持 `refresh=1` 和 `includeAttachments=1`。
+- `/api/me` 不再在读取当前用户时顺带写用户资料；登录接口仍负责写入用户资料。
+- Supabase service client 增加模块级复用，减少重复创建。
+
+6. 本地回归和资源
+- 新增 `npm run test:regression`，当前用于拦截兜底错误条文案再次进入 UI。
+- logo SVG 增加渲染精度属性并补齐文件结尾换行；logo 锯齿问题已暂停，不建议作为本轮上线验收条件。
+- 市场导航中 `发任务` 改为 `发布任务`。
+
+### 本轮不包含
+
+- 不新增数据库 migration。
+- 不新增生产环境变量。
+- 不修改付款、退款、结算、采用投稿或短信触发规则。
+- 不主动触发真实付款。
+- 不主动采用投稿或触发财虫结算。
+- 不主动发送真实短信。
+- 不切换 Vercel、阿里云、Supabase、才虫、Cron 或 GitHub 的生产配置。
+- 不把 logo 视觉最终效果作为本轮上线硬条件。
+
+### 本轮涉及文件
+
+- `app/admin/page.tsx`
+- `app/page.tsx`
+- `app/api/me/route.ts`
+- `app/api/platform/activity/route.ts`
+- `app/api/platform/market/route.ts`
+- `app/api/tasks/route.ts`
+- `app/api/tasks/[taskId]/submissions/route.ts`
+- `components/order-console.tsx`
+- `components/static-market-nav.tsx`
+- `app/globals.css`
+- `lib/order-repository.ts`
+- `lib/supabase/server.ts`
+- `package.json`
+- `scripts/check-ui-regressions.mjs`
+- `public/logo.svg`
+- `public/logo-mark.svg`
+- `docs/current-release-test-brief.md`
+- `docs/release-management.md`
+- `docs/thread-start.md`
+- `docs/thread-handoff-template.md`
+
+### 已有验证记录
+
+- `git diff --check`：通过。
+- `npm run test:regression`：通过。
+- `npm run lint`：通过，0 error，13 warning；warning 为既有 `<img>` 与 React Hook dependency 提示。
+- 既有收口记录显示 `npm run build` 通过。
+- 后台运营统计本地只读验证通过：本地管理员登录后 `/admin` 返回 200，服务端 HTML 命中 AICHONG 运营概览、用户增长、任务发布、投稿与履约、近期活跃等文案。
+- 首页市场动态本地冒烟通过：分类数量隐藏，图片分类 4 张为 2x2，视频分类 2 张同一行，浏览器 console error 为空。
+- 代码核对通过：付款确认、详情超时、图片失败、设计文件不支持预览、首页本地 tab 筛选、市场卡片 grid、兜底错误条禁用文案均已覆盖。
+
+### 本轮重点测试路径
+
+基础硬检查：
+- `git status --short --branch`
+- `git diff --check`
+- `npm run test:regression`
+- `npm run lint`
+- `npm run build`
+
+后台只读验证：
+- 本地管理员登录 `/admin`。
+- 确认运营概览正常渲染，且文案说明为只读统计。
+- 核对用户增长、任务发布、投稿与履约、近期活跃模块不遮挡、不重叠。
+- 核对后台日志是否仍有高频 `task.detail`、`heartbeat.user`、`task.list` 异常。
+
+首页市场动态验证：
+- 打开首页，确认首屏可用，不出现长时间空白。
+- 确认市场统计显示为 `今日发单 / 近30天发单 / 近30天发单额 / 累计发单`。
+- 确认分类 tab 只显示 `发现 / 文案 / 图片 / 声音 / 视频`，不显示数量。
+- 切换图片和视频分类，确认卡片按 grid 横向/网格排布，不再纵向堆叠。
+- 确认 tab 切换不再每次请求 `/api/platform/market`。
+- 检查浏览器 console error。
+
+前台订单和付款验证：
+- 普通用户登录后，历史任务列表默认能从本地分页读取。
+- 点击刷新或进入需要刷新场景时，`refresh=1` 能触发远程刷新。
+- 待支付任务显示付款确认状态；慢确认时出现 `刷新状态`。
+- 真实支付完成后的状态同步只在主人确认允许低金额测试后验证。
+- 订单详情远程读取超时时，应保留本地已有任务信息，不出现红色兜底错误条。
+
+投稿和附件验证：
+- 有投稿任务进入详情后，投稿列表应从本地优先显示。
+- `submissionCount > 0` 但本地投稿为空时，不能停在“无投稿”状态，应继续读取或提示读取中。
+- 点击刷新投稿时，`refresh=1` 应按需远程刷新。
+- 点击需要附件的投稿时，`includeAttachments=1` 应按需补水附件。
+- 图片附件预览失败应显示下载查看提示。
+- 设计类文件应提示不支持在线预览。
+- 附件上传取消后，不应残留附件说明或浏览器原生“未选择任何文件”提示。
+
+权限和数据边界验证：
+- `/api/tasks` 和 `/api/tasks/[taskId]/submissions` 仍只能返回当前用户自己的订单和投稿。
+- 普通用户不能看到其他用户订单、投稿或附件。
+- 后台入口仍受 `ADMIN_PHONES` 控制。
+- `/api/me` 取消读取时写 profile 后，登录、退出、重新登录和后台用户统计仍正常。
+
+### 本轮高风险点
+
+- 当前工作区是混合包，必须先确认每个文件归属，不能把局部通过当成整包通过。
+- `sync=0`、`refresh=1`、`includeAttachments=1` 改变读取策略和同步时机，需要重点验证不会导致订单、投稿或附件长期不刷新。
+- 后台“今日/近7天/近30天”按 24 小时窗口计算，不是中国自然日零点口径；如需自然日口径，需要主人确认后单独改。
+- 真实付款完成后的状态同步仍依赖才虫支付状态和回跳；本轮不能未经确认触发真实付款。
+- 真实采用投稿会触发结算风险，测试线程不得主动采用真实投稿。
+- 真实短信不在本轮测试中主动发送。
+- logo SVG 微调未完成最终视觉确认，不建议纳入本轮上线验收重点。
+
+### 本轮整包测试结论
+
+```text
+测试线程名称：Codex 本地整包复测线程
+对应上线摘要：2026-06-05 当前未提交功能包
+测试环境：本地 main 工作区；Next dev server http://localhost:3000；本地 HTTP/API、内置浏览器冒烟和代码路径核对
+测试时间：2026-06-05 15:18 CST
+
+测试范围：
+按“本轮待测摘要 2026-06-05 当前未提交功能包”做整包复测，覆盖基础硬检查、readiness、后台运营统计、首页市场动态、订单/投稿/附件 API 读取策略、权限边界和关键 UI 文案代码路径。未触发真实付款、采用投稿、结算、退款、真实短信或生产配置变更。
+
+通过路径：
+- `git status --short --branch` 确认为 `main...origin/main`，当前工作区仍是混合未提交改动包。
+- `git diff --check` 通过。
+- `npm run test:regression` 通过，确认禁止文案“已先显示本地订单”未进入 UI。
+- `npm run lint` 通过，0 error，13 warning；warning 为既有 `<img>` 与 React Hook dependency 提示。
+- `npm run build` 通过，Next.js 生产构建成功。
+- `/api/health/readiness` 返回 `ready=true`，才虫真实接口、Supabase、核心表、operation logs、`ADMIN_PHONES`、`CRON_SECRET`、`ORDER_REMINDER_CRON_SECRET`、开发登录、真实短信登录和订单短信提醒均为 ok。
+- 管理员本地登录接口 `POST /api/admin/login` 成功返回管理员用户 `18201500661`；`/admin` 返回 HTTP 200。
+- 浏览器后台登录页点击“获取验证码”后显示“开发环境可直接输入验证码 123456”，并自动填入 `123456`；随后服务端日志显示 `POST /api/admin/login` 200、`GET /admin` 200。
+- 浏览器打开 `/admin` 成功，命中 AICHONG 运营概览、只读统计、用户增长、任务发布、投稿与履约、近期活跃；4 个运营统计模块无显著重叠，console error 为空。
+- 后台日志区域仍展示 `task.detail` warn、`heartbeat.user` warn、`task.list` error，风险已记录。
+- `/api/platform/activity?sync=0` 返回 `todayOrderCount=0`、`monthOrderCount=37`、`monthOrderAmount=806.8`、`totalOrderCount=126`。
+- `/api/platform/market?pageSize=20&sync=0` 返回 `total=16`，分类计数为发现 16、文案 7、图片 4、声音 3、视频 2。
+- 浏览器首页打开成功，标题为 AICHONG，包含“今天想做点什么？”；统计展示为今日发单 0、近30天发单 37、近30天发单额 ¥807、累计发单 126。
+- 首页分类 tab 只显示发现、文案、图片、声音、视频；`.home-market-category-tabs button small` 数量为 0。
+- 浏览器点击“图片”tab 后 `active=图片`，显示 4 张卡片，坐标为 2 列 x 2 行；点击“视频”tab 后 `active=视频`，显示 2 张卡片，左右同一行；console error 为空。
+- dev server 日志中，首页加载触发 `/api/platform/market?pageSize=48&sync=0`；本轮观察到点击分类 tab 后未追加新的 `/api/platform/market` 请求。
+- 普通用户本地开发登录接口 `POST /api/auth/dev-login` 成功返回用户 `13231636325`；`/api/me` 返回同一普通用户。
+- `/api/tasks?page=1&pageSize=10` 默认返回 `source=supabase`、`total=7`，验证历史任务列表默认本地分页读取。
+- `/api/tasks?page=1&pageSize=10&refresh=1` 返回 `source=supabase`、`total=7`，并补回可刷新任务的附件信息，验证显式刷新路径可用。
+- `/api/tasks/eba1ff03-9707-4b44-a426-00c564bf1002` 返回 200，保留本地任务描述、付款链接、附件和 `submissionCount=1`。
+- `/api/tasks/eba1ff03-9707-4b44-a426-00c564bf1002/submissions` 默认返回 1 条投稿，`source=supabase`，未停在“无投稿”。
+- `/api/tasks/eba1ff03-9707-4b44-a426-00c564bf1002/submissions?refresh=1` 返回 1 条投稿并保留附件信息。
+- `/api/tasks/eba1ff03-9707-4b44-a426-00c564bf1002/submissions?includeAttachments=1` 返回 1 条投稿和 2 个附件，包含 `submission.md` 与 `suspense_audiobook.mp3`。
+- `/api/tasks/10a03ffe-6cf5-4d97-b235-f25650ad24cb/submissions` 返回 2 条投稿，验证 `submissionCount > 0` 的本地投稿不为空。
+- 其他普通用户 `13800000000` 的 `/api/tasks?page=1&pageSize=10` 返回 `total=0`；读取 `13231636325` 的订单详情返回 404；读取该订单投稿返回 404，权限边界通过。
+- 代码路径核对：`/api/me` 只调用 `getCurrentUser`，不再在读取当前用户时写 profile。
+- 代码路径核对：付款确认文案“正在确认付款结果 / 正在努力确认结果 / 刷新状态”存在。
+- 代码路径核对：投稿读取中展示“正在读取投稿...”；图片预览失败提示“图片预览失败，请下载查看。”；设计/不支持预览附件提示“暂不支持在线预览，请下载查看。”。
+- 代码路径核对：主发布框和紧凑发布框的附件 input 在 `onChange` 后都会执行 `input.value = ""` 和 `input.blur()`，用于避免取消选择后残留浏览器原生文件名。
+
+发现的问题：
+未发现需要本测试线程立即修改业务代码的问题。
+- 首页首屏市场接口仍可能慢：浏览器服务端日志中 `activity?sync=0` 约 3.9-5.0s，`market?pageSize=48&sync=0` 约 2.8-10.8s。本轮确认 tab 切换本地化，但首屏市场数据加载性能仍需观察。
+- 后台异常日志仍有较多 `task.detail` warn，并可见 `heartbeat.user` warn、`task.list` error；后台页面可正常渲染，但外部才虫详情/用户心跳/用户创建仍存在波动记录。
+
+已修复的问题：
+无。本轮未修改业务代码，仅按要求写回测试摘要。
+
+仍未验证：
+- 未验证线上 `/admin`、线上首页、线上 readiness、线上真实浏览器 console。
+- 未做真实手机 Safari / 微信内置浏览器回归。
+- 未在浏览器内完成普通用户登录后的前台订单详情视觉回归；为避免触发真实短信，本轮普通用户链路以本地开发登录接口的 HTTP/API 验证为主。
+- 未打开真实支付链接，未做真实付款完成后的状态同步验证。
+- 未主动采用真实投稿，未触发财虫结算。
+- 未发送真实短信。
+- 未验证真实图片预览失败场景的浏览器 UI，只核对了失败提示代码路径。
+- 未验证 logo 最终视觉效果；logo SVG 微调不作为本轮上线硬条件。
+
+残留风险：
+- 当前工作区仍是混合未提交功能包，包含后台、首页、订单/API、资源、脚本和文档，不能把局部通过直接当成整包可上线。
+- `sync=0`、`refresh=1`、`includeAttachments=1` 的本地和显式刷新路径本轮通过，但上线后仍需观察是否有订单、投稿或附件长期不刷新的情况。
+- 真实付款状态同步、真实采用投稿结算、真实短信都属于高风险链路，本轮按规则未触发，仍需主人单独确认后补测。
+- 后台运营统计当前仍按 24 小时窗口计算“今日/近7天/近30天”，不是中国自然日零点口径；如需改口径需主人单独确认。
+- 首页首屏市场数据加载仍受接口/服务端读取影响，慢时可能短暂空态；本轮主要验证 tab 切换和排布。
+
+是否涉及真实付款/结算/短信：
+否。未触发真实付款、退款、采用投稿、才虫结算或真实短信；未修改生产配置。
+
+是否改动了代码：
+否。未改业务代码；仅写回本测试摘要。
+
+改动文件：
+`docs/current-release-test-brief.md`
+
+验证命令和结果：
+- `git status --short --branch`：`main...origin/main`，存在本轮混合未提交改动。
+- `git diff --check`：通过。
+- `npm run test:regression`：通过。
+- `npm run lint`：通过，0 error，13 warning。
+- `npm run build`：通过。
+- `curl -sI http://localhost:3000`：HTTP 200。
+- `curl /api/health/readiness`：`ready=true`，全部检查项 ok。
+- `curl POST /api/admin/login`：返回管理员用户 `18201500661`。
+- `curl /admin`：HTTP_STATUS:200，HTML 命中后台运营统计关键文案。
+- Browser `/admin/login`：本地验证码提示和自动填入 `123456` 通过；`/admin` 浏览器渲染通过，console error 为空。
+- `curl /api/platform/activity?sync=0`：返回 0 / 37 / 806.8 / 126。
+- `curl /api/platform/market?pageSize=20&sync=0`：返回 `total=16`，分类 16/7/4/3/2。
+- Browser 首页：分类数量隐藏；图片 4 张为 2x2；视频 2 张同一行；console error 为空。
+- `curl POST /api/auth/dev-login`：返回普通用户 `13231636325`。
+- `curl /api/me`：返回普通用户 `13231636325`。
+- `curl /api/tasks?page=1&pageSize=10`：`source=supabase`，`total=7`。
+- `curl /api/tasks?page=1&pageSize=10&refresh=1`：`source=supabase`，`total=7`，附件信息可补回。
+- `curl /api/tasks/eba1ff03-9707-4b44-a426-00c564bf1002`：HTTP 200，`submissionCount=1`。
+- `curl /api/tasks/eba1ff03-9707-4b44-a426-00c564bf1002/submissions`：1 条投稿，`source=supabase`。
+- `curl /api/tasks/eba1ff03-9707-4b44-a426-00c564bf1002/submissions?refresh=1`：1 条投稿，附件信息保留。
+- `curl /api/tasks/eba1ff03-9707-4b44-a426-00c564bf1002/submissions?includeAttachments=1`：1 条投稿，2 个附件。
+- `curl /api/tasks/10a03ffe-6cf5-4d97-b235-f25650ad24cb/submissions`：2 条投稿。
+- `curl` 其他用户读取 `13231636325` 的订单详情和投稿：均返回 404。
+
+是否建议上线：建议补测后上线
+一句话理由：
+本地整包硬检查、后台、首页、订单/投稿/附件 API 和权限边界验证通过；但当前仍是混合未提交包，且线上、真机、真实付款状态同步、真实采用投稿结算和真实短信均未验证，建议交上线总控继续补测后再做最终上线判断。
+```
+
+### 上线总控最终判断 2026-06-05 当前未提交功能包
+
+```text
+上线结论：可上线，带观察。
+判断时间：2026-06-05 15:53 CST
+
+判断依据：
+- 主人已明确下达“上线”指令。
+- 已补读 `docs/thread-start.md`、`docs/release-management.md`、`docs/current-release-test-brief.md`、`docs/validation-checklist.md`、`docs/aichong-collaboration-constitution.md` 和 `docs/decision-log.md`。
+- 测试线程已完成本轮整包复测，未发现需要立即修复的业务代码问题。
+- 上线总控复核硬门槛：`git diff --check` 通过，`npm run test:regression` 通过，`npm run lint` 通过且 0 error / 13 warning，`npm run build` 通过。
+- 本轮权限边界已有本地 API 验证：其他普通用户读取本轮验证账号的订单详情和投稿均返回 404。
+- 本轮未新增数据库 migration，未新增生产环境变量。
+- 本轮不改变付款、退款、结算、采用投稿或短信触发规则。
+
+接受带观察上线的原因：
+- 未验证的真实付款状态同步、真实采用投稿结算、真实短信，均属于需要主人单独确认的高风险真实动作；本轮上线不主动触发这些动作。
+- 线上首页、线上后台、线上 readiness 和真实浏览器 console 只能在部署后观察，本轮列为上线后观察项。
+- 当前混合工作区已由 `docs/release-management.md` 和本文档归并成一个本轮功能包，不再按未归因散包处理。
+
+上线后观察：
+- 线上首页是否正常展示市场动态，是否出现长时间空态。
+- 线上 `/admin` 是否正常加载 AICHONG 运营概览。
+- 线上 `/api/health/readiness` 是否 ready。
+- 投稿列表、附件预览、订单详情是否出现高频 4xx/5xx 或超时。
+- 付款后慢确认时，用户是否能看到确认中状态和刷新状态入口。
+- operation logs 是否出现高频 `task.detail`、`heartbeat.user`、`task.list`、市场接口或投稿附件错误。
+
+本轮仍不触发：
+- 真实付款。
+- 真实采用投稿或才虫结算。
+- 真实短信。
+- 生产环境变量或第三方生产配置修改。
+```

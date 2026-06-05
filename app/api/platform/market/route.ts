@@ -7,9 +7,11 @@ const allowedCategories: MarketActivityCategory[] = ["全部", "文案", "图片
 
 export async function GET(request: Request) {
   try {
-    await syncMarketActivityIfStale();
-
     const { searchParams } = new URL(request.url);
+    if (searchParams.get("sync") !== "0") {
+      await syncMarketActivityIfStale();
+    }
+
     const categoryParam = searchParams.get("category") as MarketActivityCategory | null;
     const category = categoryParam && allowedCategories.includes(categoryParam) ? categoryParam : "全部";
     const page = Number(searchParams.get("page") || 1);

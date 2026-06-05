@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88" shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
   <defs>
     <linearGradient id="mark-gradient" x1="20.98" y1="20.98" x2="98.49" y2="98.49" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#fff"/>

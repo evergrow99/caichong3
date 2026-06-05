@@ -51,6 +51,13 @@ export type UpsertSubmissionInput = {
   submission: Submission;
 };
 
+export type LocalSubmissionBundle = {
+  orderId: string;
+  selectedSubmissionId?: string;
+  submissionCount: number;
+  submissions: Submission[];
+};
+
 export type OrderRepository = {
   createFromCaichongTask(input: CreateLocalOrderInput): Promise<LocalOrder>;
   listByUser(user: CurrentUser): Promise<LocalOrder[]>;
@@ -139,6 +146,14 @@ type SubmissionRow = {
   }[];
 };
 
+type SubmissionAttachmentRow = {
+  submission_id: string;
+  file_url: string;
+  file_name: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+};
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const orderSelect = `
@@ -161,6 +176,22 @@ const orderSelect = `
     file_size,
     mime_type
   )
+`;
+
+const orderListSelect = `
+  id,
+  user_id,
+  caichong_account_id,
+  publish_mode,
+  caichong_task_id,
+  description,
+  price,
+  status,
+  payment_url,
+  deadline_at,
+  close_reason,
+  submission_count,
+  selected_submission_id
 `;
 
 const adminOrderSelect = `
@@ -258,6 +289,37 @@ export async function listByUser(user: CurrentUser) {
   return (data || []).map((row) => mapOrderRow(row as OrderRow));
 }
 
+export async function listPageByUser(user: CurrentUser, page: number, pageSize: number) {
+  if (!isOrderRepositoryEnabled()) {
+    return {
+      orders: [],
+      total: 0
+    };
+  }
+
+  const start = Math.max(0, (page - 1) * pageSize);
+  const end = start + pageSize;
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("orders")
+    .select(orderListSelect)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .range(start, end);
+
+  if (error) {
+    throw new Error(`读取本地订单失败：${error.message}`);
+  }
+
+  const rows = data || [];
+  const hasMore = rows.length > pageSize;
+  const orders = rows.slice(0, pageSize).map((row) => mapOrderRow(row as OrderRow));
+  return {
+    orders,
+    total: start + orders.length + (hasMore ? 1 : 0)
+  };
+}
+
 export async function findByUserAndTaskId(user: CurrentUser, taskId: string) {
   if (!isOrderRepositoryEnabled()) {
     return null;
@@ -276,6 +338,70 @@ export async function findByUserAndTaskId(user: CurrentUser, taskId: string) {
   }
 
   return data ? mapOrderRow(data as OrderRow) : null;
+}
+
+export async function listSubmissionsByUserAndTaskId(
+  user: CurrentUser,
+  taskId: string,
+  options: { includeAttachments?: boolean } = {}
+): Promise<LocalSubmissionBundle | null> {
+  if (!isOrderRepositoryEnabled()) {
+    return null;
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("orders")
+    .select(
+      `
+      id,
+      selected_submission_id,
+      submission_count,
+      submissions (
+        id,
+        caichong_submission_id,
+        agent_id,
+        agent_name,
+        content,
+        status,
+        selected,
+        created_at
+      )
+    `
+    )
+    .eq("user_id", user.id)
+    .eq("caichong_task_id", taskId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`读取本地投稿失败：${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  const row = data as {
+    id: string;
+    selected_submission_id: string | null;
+    submission_count: number | null;
+    submissions?: SubmissionRow[];
+  };
+  const selectedSubmissionId = row.selected_submission_id || undefined;
+  const submissionRows = [...(row.submissions || [])].sort((left, right) => {
+    const leftTime = left.created_at ? Date.parse(left.created_at) : 0;
+    const rightTime = right.created_at ? Date.parse(right.created_at) : 0;
+    return rightTime - leftTime;
+  });
+
+  return {
+    orderId: row.id,
+    selectedSubmissionId,
+    submissionCount: row.submission_count || 0,
+    submissions: options.includeAttachments
+      ? await hydrateSubmissionAttachments(submissionRows, selectedSubmissionId)
+      : submissionRows.map((submission) => mapSubmissionRow(submission, selectedSubmissionId))
+  };
 }
 
 export async function findByTaskId(taskId: string) {
@@ -540,6 +666,40 @@ function mapSubmissionRow(row: SubmissionRow, selectedSubmissionId?: string): Su
   };
 }
 
+async function hydrateSubmissionAttachments(rows: SubmissionRow[], selectedSubmissionId?: string) {
+  const submissionIds = rows.map((row) => row.id).filter((id): id is string => Boolean(id));
+  if (submissionIds.length === 0) {
+    return rows.map((row) => mapSubmissionRow(row, selectedSubmissionId));
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data: attachmentData, error: attachmentError } = await supabase
+    .from("submission_attachments")
+    .select("submission_id, file_url, file_name, file_size, mime_type")
+    .in("submission_id", submissionIds);
+
+  if (attachmentError && attachmentError.code !== "42P01") {
+    throw new Error(`读取本地投稿附件失败：${attachmentError.message}`);
+  }
+
+  const attachmentsBySubmissionId = new Map<string, SubmissionAttachmentRow[]>();
+  for (const attachment of (attachmentData || []) as SubmissionAttachmentRow[]) {
+    const attachments = attachmentsBySubmissionId.get(attachment.submission_id) || [];
+    attachments.push(attachment);
+    attachmentsBySubmissionId.set(attachment.submission_id, attachments);
+  }
+
+  return rows.map((row) =>
+    mapSubmissionRow(
+      {
+        ...row,
+        submission_attachments: row.id ? attachmentsBySubmissionId.get(row.id) || [] : []
+      },
+      selectedSubmissionId
+    )
+  );
+}
+
 export async function listSubmissionsByOrder(orderId: string, selectedSubmissionId?: string) {
   if (!isOrderRepositoryEnabled()) {
     return [];
@@ -557,42 +717,17 @@ export async function listSubmissionsByOrder(orderId: string, selectedSubmission
       content,
       status,
       selected,
-      created_at,
-      submission_attachments (
-        file_url,
-        file_name,
-        file_size,
-        mime_type
-      )
+      created_at
     `
     )
     .eq("order_id", orderId)
     .order("created_at", { ascending: false });
 
   if (error) {
-    if (error.code === "PGRST200" || error.code === "42P01") {
-      return listSubmissionsByOrderWithoutAttachments(orderId, selectedSubmissionId);
-    }
-
     throw new Error(`读取本地投稿失败：${error.message}`);
   }
 
-  return ((data || []) as SubmissionRow[]).map((row) => mapSubmissionRow(row, selectedSubmissionId));
-}
-
-async function listSubmissionsByOrderWithoutAttachments(orderId: string, selectedSubmissionId?: string) {
-  const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("submissions")
-    .select("caichong_submission_id, agent_id, agent_name, content, status, selected, created_at")
-    .eq("order_id", orderId)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    throw new Error(`读取本地投稿失败：${error.message}`);
-  }
-
-  return ((data || []) as SubmissionRow[]).map((row) => mapSubmissionRow(row, selectedSubmissionId));
+  return hydrateSubmissionAttachments((data || []) as SubmissionRow[], selectedSubmissionId);
 }
 
 export async function findSubmissionByOrder(orderId: string, submissionId: string) {

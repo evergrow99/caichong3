@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/current-user";
-import { findByUserAndTaskId, listSubmissionsByOrder, upsertSubmission } from "@/lib/order-repository";
+import { listSubmissionsByUserAndTaskId, upsertSubmission } from "@/lib/order-repository";
 import { getErrorMessage } from "@/lib/errors";
 import { getTaskService } from "@/lib/task-service";
 import type { Submission } from "@/lib/caichong";
@@ -10,25 +10,32 @@ type RouteContext = {
 };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SUBMISSION_REMOTE_REFRESH_TIMEOUT_MS = 4500;
 
 function normalizeSubmissions(data: { submissions?: Submission[] } | Submission[]) {
   return Array.isArray(data) ? data : data.submissions || [];
 }
 
-export async function GET(_request: Request, { params }: RouteContext) {
+export async function GET(request: Request, { params }: RouteContext) {
   try {
     const user = await getCurrentUser();
     const { taskId } = await params;
+    const { searchParams } = new URL(request.url);
+    const shouldRefresh = searchParams.get("refresh") === "1";
+    const includeAttachments = searchParams.get("includeAttachments") === "1";
 
-    const localOrder = await findByUserAndTaskId(user, taskId);
-    if (localOrder) {
-      let submissions: Submission[] = await listSubmissionsByOrder(localOrder.id, localOrder.selectedSubmissionId);
+    const localBundle = await listSubmissionsByUserAndTaskId(user, taskId, { includeAttachments });
+    if (localBundle) {
+      let submissions: Submission[] = localBundle.submissions;
 
-      if (uuidPattern.test(taskId)) {
+      if (shouldRefresh && uuidPattern.test(taskId)) {
         let remoteSubmissions: Submission[] = [];
 
         try {
-          const taskService = await getTaskService(user);
+          const taskService = await getTaskService(user, {
+            queryRetryDelaysMs: [],
+            queryTimeoutMs: SUBMISSION_REMOTE_REFRESH_TIMEOUT_MS
+          });
           remoteSubmissions = normalizeSubmissions(await taskService.service.getSubmissions(taskId));
         } catch (remoteError) {
           console.warn(`读取远程交付结果失败，使用本地结果兜底：${getErrorMessage(remoteError)}`);
@@ -39,7 +46,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
           await Promise.all(
             remoteSubmissions.map((submission) =>
               upsertSubmission({
-                orderId: localOrder.id,
+                orderId: localBundle.orderId,
                 submission
               })
             )
@@ -49,9 +56,9 @@ export async function GET(_request: Request, { params }: RouteContext) {
             const localSubmission = localSubmissionsById.get(submission.submissionId);
             return {
               ...submission,
-              selected: localSubmission?.selected || submission.selected || localOrder.selectedSubmissionId === submission.submissionId,
+              selected: localSubmission?.selected || submission.selected || localBundle.selectedSubmissionId === submission.submissionId,
               status:
-                localSubmission?.selected || submission.selected || localOrder.selectedSubmissionId === submission.submissionId
+                localSubmission?.selected || submission.selected || localBundle.selectedSubmissionId === submission.submissionId
                   ? "approved"
                   : localSubmission?.status || submission.status
             };

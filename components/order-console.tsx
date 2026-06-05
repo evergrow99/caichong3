@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import type { FocusEvent as ReactFocusEvent, MouseEvent as ReactMouseEvent } from "react";
 import { AppConfirmDialog, AppNoticeDialog, AppToast } from "@/components/app-dialog";
 import type { PublishTask, Submission } from "@/lib/caichong";
 import { classifyMarketTask } from "@/lib/market-classification";
@@ -40,6 +41,12 @@ type AttachmentPreviewModal = {
 type SelectConfirmation = {
   taskId: string;
   submissionId: string;
+};
+
+type PaymentConfirmationState = {
+  taskId: string;
+  startedAt: number;
+  failureCount: number;
 };
 
 type CurrentUser = {
@@ -86,6 +93,9 @@ type PlatformActivitySummary = {
 type MarketHomePreviewData = {
   summary: MarketActivitySummary;
   feed: MarketFeedResponse;
+  isPending?: boolean;
+  isFeedPending?: boolean;
+  isSummaryPending?: boolean;
 };
 
 type TaskFilter = "all" | "ACTIVE" | "PENDING_SELECTION" | "COMPLETED" | "CLOSED";
@@ -115,6 +125,9 @@ const PAYMENT_POLL_MEDIUM_WINDOW_MS = 10 * 60 * 1000;
 const PAYMENT_POLL_FAST_INTERVAL_MS = 5 * 1000;
 const PAYMENT_POLL_MEDIUM_INTERVAL_MS = 15 * 1000;
 const PAYMENT_POLL_SLOW_INTERVAL_MS = 60 * 1000;
+const PAYMENT_CONFIRMATION_SLOW_MS = 15 * 1000;
+const PAYMENT_CONFIRMATION_FAILURE_THRESHOLD = 2;
+const DETAIL_FETCH_TIMEOUT_MS = 8 * 1000;
 const COMPOSER_TEXTAREA_MIN_HEIGHT = 52;
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 192;
 const TASK_DESCRIPTION_COLLAPSE_THRESHOLD = 320;
@@ -125,6 +138,7 @@ const ATTACHMENT_RULE_COPY = "支持常见图片、文档、音视频等参考�
 const ATTACHMENT_LIMIT_COPY = "单个附件最大 10MB, 最多 5 个";
 const ATTACHMENT_TOO_MANY_ERROR = `最多上传 ${MAX_ATTACHMENTS} 个附件。如需调整，请先删除已选附件。`;
 const ATTACHMENT_TOO_LARGE_ERROR = "附件最大不能超过 10MB";
+const SHOW_COMPACT_PUBLISH_BAR = false;
 
 function writePaymentBridgePage(paymentWindow: Window) {
   paymentWindow.document.write(`<!doctype html>
@@ -261,10 +275,12 @@ function writePaymentBridgePage(paymentWindow: Window) {
 const PENDING_PAYMENT_TASK_STORAGE_KEY = "pendingPaymentTaskId";
 const SUBMISSION_READ_COUNTS_STORAGE_KEY = "aichong:submission-read-counts:v2";
 const IMAGE_FILE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
+const PREVIEW_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif", "image/svg+xml"]);
 const VIDEO_FILE_EXTENSIONS = new Set(["mp4", "mov", "webm", "m4v", "avi"]);
 const AUDIO_FILE_EXTENSIONS = new Set(["mp3", "wav", "m4a", "aac", "ogg", "flac"]);
 const DOCUMENT_FILE_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "md", "ppt", "pptx", "xls", "xlsx", "csv"]);
 const ARCHIVE_FILE_EXTENSIONS = new Set(["zip", "rar", "7z", "tar", "gz"]);
+const DESIGN_FILE_EXTENSIONS = new Set(["psd", "ai", "fig", "sketch", "xd"]);
 const isPhoneValid = (phone: string) => /^1\d{10}$/.test(phone);
 const isCodeValid = (code: string) => /^\d{6}$/.test(code);
 const maskPhone = (phone: string) => {
@@ -621,10 +637,10 @@ function getFileExtension(fileName?: string) {
 }
 
 function getAttachmentKind(attachment: { fileName?: string; mimeType?: string }) {
-  const mimeType = attachment.mimeType || "";
+  const mimeType = (attachment.mimeType || "").toLowerCase();
   const extension = getFileExtension(attachment.fileName);
 
-  if (mimeType.startsWith("image/") || IMAGE_FILE_EXTENSIONS.has(extension)) return "image";
+  if (PREVIEW_IMAGE_MIME_TYPES.has(mimeType) || IMAGE_FILE_EXTENSIONS.has(extension)) return "image";
   if (mimeType.startsWith("video/") || VIDEO_FILE_EXTENSIONS.has(extension)) return "video";
   if (mimeType.startsWith("audio/") || AUDIO_FILE_EXTENSIONS.has(extension)) return "audio";
   if (DOCUMENT_FILE_EXTENSIONS.has(extension)) return "doc";
@@ -656,6 +672,7 @@ function getAttachmentDownloadUrl(attachment: { fileUrl: string; fileName?: stri
 
 function AttachmentVisual({ attachment, file }: { attachment: { fileUrl?: string; fileName?: string; mimeType?: string }; file?: File }) {
   const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
+  const [imageFailed, setImageFailed] = useState(false);
   const kind = getAttachmentKind(attachment);
   const isImage = kind === "image";
 
@@ -674,10 +691,14 @@ function AttachmentVisual({ attachment, file }: { attachment: { fileUrl?: string
     ? localImageUrl || (attachment.fileUrl ? getAttachmentDownloadUrl({ fileUrl: attachment.fileUrl, fileName: attachment.fileName }, "inline") : "")
     : "";
 
-  if (imageUrl) {
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl]);
+
+  if (imageUrl && !imageFailed) {
     return (
       <span className="attachment-thumb image" aria-hidden="true">
-        <img src={imageUrl} alt="" />
+        <img src={imageUrl} alt="" onError={() => setImageFailed(true)} />
       </span>
     );
   }
@@ -704,8 +725,9 @@ function isTextLikeAttachment(fileName?: string, contentType = "") {
 
 function isImageLikeAttachment(fileName?: string, contentType = "") {
   const normalizedName = (fileName || "").toLowerCase();
+  const normalizedContentType = contentType.toLowerCase().split(";")[0].trim();
   return (
-    contentType.includes("image/") ||
+    PREVIEW_IMAGE_MIME_TYPES.has(normalizedContentType) ||
     normalizedName.endsWith(".png") ||
     normalizedName.endsWith(".jpg") ||
     normalizedName.endsWith(".jpeg") ||
@@ -717,6 +739,10 @@ function isImageLikeAttachment(fileName?: string, contentType = "") {
 function isKnownUnsupportedPreviewAttachment(attachment: UploadedAttachment) {
   if (isTextLikeAttachment(attachment.fileName, attachment.mimeType) || isImageLikeAttachment(attachment.fileName, attachment.mimeType)) {
     return false;
+  }
+
+  if (DESIGN_FILE_EXTENSIONS.has(getFileExtension(attachment.fileName))) {
+    return true;
   }
 
   const kind = getAttachmentKind(attachment);
@@ -906,6 +932,28 @@ async function readJson<T>(response: Response): Promise<T> {
   return data as T;
 }
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = DETAIL_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function getRequestErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return "读取超时，请点击刷新重试";
+  }
+
+  return error instanceof Error ? error.message : fallback;
+}
+
 function PlatformActivityPanel({
   activity,
   isLoading,
@@ -982,38 +1030,30 @@ function PlatformActivityPanel({
   );
 }
 
-function MarketHomePreviewPanel({ feed: initialFeed, summary }: MarketHomePreviewData) {
-  const [feed, setFeed] = useState(initialFeed);
+function MarketHomePreviewPanel({
+  feed: initialFeed,
+  summary,
+  isPending = false,
+  isFeedPending: isFeedPendingProp = false,
+  isSummaryPending: isSummaryPendingProp = false
+}: MarketHomePreviewData) {
   const [activeCategory, setActiveCategory] = useState<MarketActivityCategory>("全部");
   const [selectedTask, setSelectedTask] = useState<MarketFeedItem | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [isFilterPinned, setIsFilterPinned] = useState(false);
   const filterSentinelRef = useRef<HTMLDivElement | null>(null);
+  const hasUnavailableEmptyFeed = summary.source === "unavailable" && initialFeed.total === 0 && initialFeed.items.length === 0;
+  const isFeedPending = isPending || isFeedPendingProp || hasUnavailableEmptyFeed;
+  const isSummaryPending = isPending || isSummaryPendingProp || (summary.source === "unavailable" && initialFeed.total === 0);
   const marketStats = [
-    ["今日发单", summary.todayOrderCount.toLocaleString("zh-CN")],
-    ["近30天发单", summary.monthOrderCount.toLocaleString("zh-CN")],
-    ["近30天发单额", formatMarketPreviewAmount(summary.monthOrderAmount)],
-    ["累计发单", summary.totalOrderCount.toLocaleString("zh-CN")]
+    ["今日发单", isSummaryPending ? "读取中" : summary.todayOrderCount.toLocaleString("zh-CN")],
+    ["近30天发单", isSummaryPending ? "读取中" : summary.monthOrderCount.toLocaleString("zh-CN")],
+    ["近30天发单额", isSummaryPending ? "读取中" : formatMarketPreviewAmount(summary.monthOrderAmount)],
+    ["累计发单", isSummaryPending ? "读取中" : summary.totalOrderCount.toLocaleString("zh-CN")]
   ];
-  const previewItems = feed.items;
+  const previewItems = activeCategory === "全部" ? initialFeed.items : initialFeed.items.filter((item) => item.category === activeCategory);
 
-  async function changeCategory(category: MarketActivityCategory) {
+  function changeCategory(category: MarketActivityCategory) {
     setActiveCategory(category);
-    setIsLoading(true);
-
-    try {
-      const response = await fetch(`/api/platform/market?category=${encodeURIComponent(category)}&pageSize=48`, {
-        cache: "no-store"
-      });
-      setFeed(await readJson<MarketFeedResponse>(response));
-    } catch {
-      setFeed((currentFeed) => ({
-        ...currentFeed,
-        items: []
-      }));
-    } finally {
-      setIsLoading(false);
-    }
   }
 
   function openTaskFromKeyboard(event: KeyboardEvent<HTMLElement>, item: MarketFeedItem) {
@@ -1052,22 +1092,23 @@ function MarketHomePreviewPanel({ feed: initialFeed, summary }: MarketHomePrevie
         <div className="home-market-sticky-sentinel" ref={filterSentinelRef} aria-hidden="true" />
         <div className={`home-market-use-case-bar${isFilterPinned ? " is-pinned" : ""}`}>
           <div className="home-market-category-tabs" aria-label="任务类型筛选">
-            {feed.categories.map((category) => (
+            {initialFeed.categories.map((category) => (
               <button
                 className={activeCategory === category.key ? "active" : ""}
                 key={category.key}
                 type="button"
-                onClick={() => void changeCategory(category.key)}
+                onClick={() => changeCategory(category.key)}
               >
                 <span>{category.label}</span>
-                <small>{category.count}</small>
               </button>
             ))}
           </div>
         </div>
 
-        <div className={`home-market-card-grid ${isLoading ? "is-loading" : ""}`} aria-busy={isLoading}>
-          {previewItems.length > 0 ? (
+        <div className="home-market-card-grid">
+          {isFeedPending ? (
+            <div className="home-market-empty">市场动态读取中...</div>
+          ) : previewItems.length > 0 ? (
             previewItems.map((item) => (
               <article
                 className={`market-task-card market-task-card-compact market-task-card-${item.category}`}
@@ -1124,7 +1165,16 @@ function MarketHomePreviewPanel({ feed: initialFeed, summary }: MarketHomePrevie
   );
 }
 
+function hasUnavailableEmptyMarketFeed(preview?: MarketHomePreviewData) {
+  return Boolean(preview?.summary.source === "unavailable" && preview.feed.total === 0 && preview.feed.items.length === 0);
+}
+
+function shouldRefreshHomeMarketPreview(preview?: MarketHomePreviewData) {
+  return Boolean(preview?.isPending || preview?.isFeedPending || preview?.isSummaryPending || hasUnavailableEmptyMarketFeed(preview));
+}
+
 export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePreviewData } = {}) {
+  const [homeMarketPreview, setHomeMarketPreview] = useState<MarketHomePreviewData | undefined>(marketPreview);
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [loginPhone, setLoginPhone] = useState("");
@@ -1146,6 +1196,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [hasResolvedInitialRoute, setHasResolvedInitialRoute] = useState(false);
   const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [isSubmissionsLoading, setIsSubmissionsLoading] = useState(false);
   const [isRefreshingPayment, setIsRefreshingPayment] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -1170,6 +1221,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isTaskDescriptionExpanded, setIsTaskDescriptionExpanded] = useState(false);
   const [pendingPaymentTaskId, setPendingPaymentTaskId] = useState<string | null>(null);
+  const [paymentConfirmation, setPaymentConfirmation] = useState<PaymentConfirmationState | null>(null);
   const [paymentLinkIssuedAtByTaskId, setPaymentLinkIssuedAtByTaskId] = useState<Record<string, number>>({});
   const [paymentNow, setPaymentNow] = useState(() => Date.now());
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
@@ -1189,6 +1241,8 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const selectedTaskIdRef = useRef<string | null>(null);
   const detailRequestSeqRef = useRef(0);
   const previewRequestSeqRef = useRef(0);
+  const submissionsCacheRef = useRef<Map<string, Submission[]>>(new Map());
+  const submissionsPrefetchInFlightRef = useRef<Set<string>>(new Set());
   const [isCompactComposerVisible, setIsCompactComposerVisible] = useState(false);
   const [isCompactComposerExpanded, setIsCompactComposerExpanded] = useState(false);
   const [usesShortCompactPrompt, setUsesShortCompactPrompt] = useState(false);
@@ -1214,6 +1268,62 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     };
   }, [attachmentPreviewModal]);
 
+  useEffect(() => {
+    setHomeMarketPreview(marketPreview);
+  }, [marketPreview]);
+
+  useEffect(() => {
+    if (!marketPreview || !shouldRefreshHomeMarketPreview(marketPreview)) {
+      return;
+    }
+
+    let isCancelled = false;
+    const initialMarketPreview = marketPreview;
+
+    async function loadHomeMarketFeed() {
+      try {
+        const feed = await readJson<MarketFeedResponse>(await fetch("/api/platform/market?pageSize=48&sync=0", { cache: "no-store" }));
+
+        if (!isCancelled) {
+          setHomeMarketPreview((current) => ({
+            summary: current?.summary || initialMarketPreview.summary,
+            feed,
+            isPending: false,
+            isFeedPending: false,
+            isSummaryPending: current?.isSummaryPending ?? initialMarketPreview.isSummaryPending
+          }));
+        }
+      } catch (marketPreviewError) {
+        console.error("首页市场动态补充读取失败", marketPreviewError);
+      }
+    }
+
+    async function loadHomeMarketSummary() {
+      try {
+        const summary = await readJson<MarketActivitySummary>(await fetch("/api/platform/activity?sync=0", { cache: "no-store" }));
+
+        if (!isCancelled) {
+          setHomeMarketPreview((current) => ({
+            summary,
+            feed: current?.feed || initialMarketPreview.feed,
+            isPending: false,
+            isFeedPending: current?.isFeedPending ?? initialMarketPreview.isFeedPending,
+            isSummaryPending: false
+          }));
+        }
+      } catch (marketPreviewError) {
+        console.error("首页发单统计补充读取失败", marketPreviewError);
+      }
+    }
+
+    void loadHomeMarketFeed();
+    void loadHomeMarketSummary();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [marketPreview]);
+
   const canLogin = isPhoneValid(loginPhone) && isCodeValid(loginCode) && !isLoggingIn;
   const canSendCode = isPhoneValid(loginPhone) && !isSendingCode && codeCooldown === 0;
   const isPhoneLoggedIn = currentUser?.authMode === "phone";
@@ -1224,9 +1334,12 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const shouldShowComposerValidationError = shouldShowDescriptionError || shouldShowPriceError || shouldShowAttachmentError;
   const descriptionLength = description.trim().length;
   const shouldPausePlatformActivity = isComposerFocused || descriptionLength > 0;
+  const activeMarketPreview = homeMarketPreview;
   const visibleTasks = tasks;
   const filteredTasks = visibleTasks.filter((task) => taskFilter === "all" || task.status === taskFilter);
+  const shouldShowSidebarLoading = Boolean(isPhoneLoggedIn && isLoading && !hasLoadedTasks);
   const shouldShowSidebarOrders = Boolean(isPhoneLoggedIn && hasLoadedTasks && visibleTasks.length > 0);
+  const shouldShowSidebarEmpty = Boolean(isPhoneLoggedIn && hasLoadedTasks && visibleTasks.length === 0);
   const hasCurrentUserSyncableTasks = tasks.some(isSyncableTask);
   const hasUnreadSubmissionsAcrossTasks = visibleTasks.some(hasUnreadSubmissions);
   const selectedTaskSubmissionNotice = selectedTask ? getSubmissionNotice(selectedTask, submissions.length) : null;
@@ -1234,6 +1347,10 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     selectedTask?.status === "COMPLETED"
       ? [...submissions].sort((left, right) => Number(Boolean(right.selected)) - Number(Boolean(left.selected)))
       : submissions;
+  const displayedSubmissionCount = selectedTask ? Math.max(submissions.length, getSubmissionCount(selectedTask)) : submissions.length;
+  const submissionCountText = isSubmissionsLoading && submissions.length === 0 && displayedSubmissionCount === 0
+    ? "读取中..."
+    : `${displayedSubmissionCount} 条`;
   const selectedTaskReadableDescription = selectedTask ? getReadableTaskDescription(selectedTask.description) : "";
   const shouldCollapseTaskDescription =
     selectedTaskReadableDescription.length > TASK_DESCRIPTION_COLLAPSE_THRESHOLD ||
@@ -1245,7 +1362,18 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   const refreshMetaText = isSyncing
     ? "正在同步"
     : autoRefreshError || (lastRefreshAt ? `已同步 ${lastRefreshAt}` : lastDetailLoadedAt ? `已加载 ${lastDetailLoadedAt}` : "读取中");
-  const shouldShowDetailLoadingState = Boolean(selectedTaskId && (isDetailLoading || (!selectedTask && !error)));
+  const shouldShowDetailLoadingState = Boolean(selectedTaskId && !selectedTask && (isDetailLoading || !error));
+  const isPaymentConfirmationActive = Boolean(
+    selectedTask?.status === "PENDING_PAYMENT" &&
+      pendingPaymentTaskId === selectedTask.taskId &&
+      paymentConfirmation?.taskId === selectedTask.taskId
+  );
+  const isPaymentConfirmationSlow = Boolean(
+    isPaymentConfirmationActive &&
+      paymentConfirmation &&
+      (paymentNow - paymentConfirmation.startedAt >= PAYMENT_CONFIRMATION_SLOW_MS ||
+        paymentConfirmation.failureCount >= PAYMENT_CONFIRMATION_FAILURE_THRESHOLD)
+  );
   const selectedPaymentLinkIssuedAt =
     selectedTask?.status === "PENDING_PAYMENT"
       ? paymentLinkIssuedAtByTaskId[selectedTask.taskId] || getDateTimeMs(selectedTask.createdAt)
@@ -1374,25 +1502,104 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     return getUnreadSubmissionCount(task) > 0;
   }
 
+  function prefetchTaskSubmissions(nextTasks: PublishTask[]) {
+    nextTasks
+      .filter((task) => getSubmissionCount(task) > 0)
+      .slice(0, 8)
+      .forEach((task) => {
+        if (submissionsCacheRef.current.has(task.taskId) || submissionsPrefetchInFlightRef.current.has(task.taskId)) {
+          return;
+        }
+
+        submissionsPrefetchInFlightRef.current.add(task.taskId);
+        fetchWithTimeout(`/api/tasks/${task.taskId}/submissions`)
+          .then((response) => readJson<{ submissions?: Submission[] } | Submission[]>(response))
+          .then((submissionData) => {
+            const nextSubmissions = Array.isArray(submissionData) ? submissionData : submissionData.submissions || [];
+            if (nextSubmissions.length === 0) {
+              return;
+            }
+
+            submissionsCacheRef.current.set(task.taskId, nextSubmissions);
+          })
+          .catch(() => {
+            // 预取失败不影响用户手动打开任务时的正常读取。
+          })
+          .finally(() => {
+            submissionsPrefetchInFlightRef.current.delete(task.taskId);
+          });
+      });
+  }
+
   function getUnreadSubmissionCount(task: PublishTask) {
     const submissionCount = getSubmissionCount(task);
     return Math.max(0, submissionCount - (readSubmissionCounts[task.taskId] || 0));
+  }
+
+  function startPaymentConfirmation(taskId: string) {
+    setPendingPaymentTaskId(taskId);
+    setPaymentConfirmation({
+      taskId,
+      startedAt: Date.now(),
+      failureCount: 0
+    });
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(PENDING_PAYMENT_TASK_STORAGE_KEY, taskId);
+    }
+  }
+
+  function clearPaymentConfirmation(taskId?: string) {
+    setPendingPaymentTaskId((currentTaskId) => {
+      if (taskId && currentTaskId !== taskId) {
+        return currentTaskId;
+      }
+
+      return null;
+    });
+    setPaymentConfirmation((currentConfirmation) => {
+      if (taskId && currentConfirmation?.taskId !== taskId) {
+        return currentConfirmation;
+      }
+
+      return null;
+    });
+
+    if (typeof window !== "undefined" && (!taskId || window.sessionStorage.getItem(PENDING_PAYMENT_TASK_STORAGE_KEY) === taskId)) {
+      window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
+    }
+  }
+
+  function notePaymentConfirmationFailure(taskId: string) {
+    setPaymentConfirmation((currentConfirmation) => {
+      if (currentConfirmation?.taskId !== taskId) {
+        return currentConfirmation;
+      }
+
+      return {
+        ...currentConfirmation,
+        failureCount: currentConfirmation.failureCount + 1
+      };
+    });
   }
 
   function updateSelectedTask(taskId: string | null) {
     selectedTaskIdRef.current = taskId;
     setError(null);
     setMessage(null);
-    if (!taskId) {
-      detailRequestSeqRef.current += 1;
-      setIsDetailLoading(false);
-    }
+    const knownTask = taskId ? tasks.find((task) => task.taskId === taskId) || (selectedTask?.taskId === taskId ? selectedTask : null) : null;
+      if (!taskId) {
+        detailRequestSeqRef.current += 1;
+        setIsDetailLoading(false);
+        setIsSubmissionsLoading(false);
+      }
 
     if (taskId !== selectedTaskId) {
-      setSelectedTask(null);
+      setSelectedTask(knownTask);
       setSubmissions([]);
+      setIsSubmissionsLoading(Boolean(taskId));
       if (taskId) {
-        setIsDetailLoading(true);
+        setIsDetailLoading(!knownTask);
       }
     }
     setSelectedTaskId(taskId);
@@ -1417,27 +1624,40 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     setIsCompactComposerExpanded(false);
 
     const isMobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
+    const focusComposerInput = () => descriptionTextareaRef.current?.focus({ preventScroll: true });
+
     if (scroller instanceof HTMLElement && composer) {
       const targetTop = isMobileViewport ? Math.max(0, composer.offsetTop - 18) : 0;
       scroller.scrollTo({ top: targetTop, left: 0, behavior: "smooth" });
-    } else {
+      window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
       composer?.scrollIntoView({ behavior: "smooth", block: isMobileViewport ? "start" : "center", inline: "nearest" });
-    }
-
-    if (isMobileViewport) {
-      return;
+    } else {
+      window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+      composer?.scrollIntoView({ behavior: "smooth", block: isMobileViewport ? "start" : "center", inline: "nearest" });
     }
 
     window.requestAnimationFrame(() => {
       if (scroller instanceof HTMLElement) {
-        scroller.scrollLeft = 0;
+        if (!isMobileViewport) {
+          scroller.scrollLeft = 0;
+        }
       }
-      descriptionTextareaRef.current?.focus({ preventScroll: true });
+      focusComposerInput();
     });
+    window.setTimeout(focusComposerInput, 120);
+    window.setTimeout(focusComposerInput, 260);
+  }
+
+  function activateCompactComposer(event: ReactMouseEvent<HTMLElement> | ReactFocusEvent<HTMLElement>) {
+    if ((event.target as HTMLElement).closest('.compact-attachment-control, input[type="file"]')) {
+      return;
+    }
+
+    focusHomeComposer();
   }
 
   const syncCompactComposerVisibility = useCallback(() => {
-    if (!marketPreview || selectedTaskId) {
+    if (!activeMarketPreview || selectedTaskId) {
       setIsCompactComposerVisible(false);
       setIsCompactComposerExpanded(false);
       return;
@@ -1453,7 +1673,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     if (!shouldShowCompactComposer) {
       setIsCompactComposerExpanded(false);
     }
-  }, [marketPreview, selectedTaskId]);
+  }, [activeMarketPreview, selectedTaskId]);
 
   async function loadTasks() {
     setIsLoading(true);
@@ -1465,7 +1685,21 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       );
       const nextTasks = data.tasks || [];
       setTasks(nextTasks);
+      const activeTaskId = selectedTaskIdRef.current;
+      const activeTask = activeTaskId ? nextTasks.find((task) => task.taskId === activeTaskId) : null;
+      if (activeTask) {
+        setSelectedTask((currentTask) =>
+          currentTask?.taskId === activeTask.taskId
+            ? {
+                ...currentTask,
+                ...activeTask
+              }
+            : activeTask
+        );
+        setIsDetailLoading(false);
+      }
       reconcileSubmissionReadCounts(nextTasks);
+      prefetchTaskSubmissions(nextTasks);
       setDataSource(data.source || "unknown");
       setAutoRefreshError(null);
       return nextTasks;
@@ -1495,8 +1729,16 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     try {
       const user = await readJson<CurrentUser>(await fetch("/api/me"));
       setCurrentUser(user);
+      if (user.authMode === "phone") {
+        void loadTasks();
+      } else {
+        setTasks([]);
+        setHasLoadedTasks(false);
+      }
     } catch {
       setCurrentUser(null);
+      setTasks([]);
+      setHasLoadedTasks(false);
     } finally {
       setIsAuthLoading(false);
     }
@@ -1532,7 +1774,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
   }
 
-  async function loadTaskDetail(taskId: string, options: { showLoading?: boolean; markRead?: boolean } = {}): Promise<PublishTask | null> {
+  async function loadTaskDetail(taskId: string, options: { showLoading?: boolean; markRead?: boolean; suppressError?: boolean } = {}): Promise<PublishTask | null> {
     const requestSeq = detailRequestSeqRef.current + 1;
     detailRequestSeqRef.current = requestSeq;
     const shouldShowLoading = options.showLoading ?? !selectedTask;
@@ -1543,50 +1785,118 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     setError(null);
 
     try {
-      const task = await readJson<PublishTask>(await fetch(`/api/tasks/${taskId}`));
+      const task = await readJson<PublishTask>(await fetchWithTimeout(`/api/tasks/${taskId}`));
       if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
         return null;
       }
 
-      setSelectedTask(task);
-      mergeTaskIntoList(task);
+      const knownTask = tasks.find((item) => item.taskId === taskId) || (selectedTask?.taskId === taskId ? selectedTask : null);
+      const taskWithKnownSubmissionCount = {
+        ...task,
+        submissionCount: Math.max(getSubmissionCount(task), getSubmissionCount(knownTask || ({ submissionCount: 0 } as PublishTask)))
+      };
+      setSelectedTask(taskWithKnownSubmissionCount);
+      mergeTaskIntoList(taskWithKnownSubmissionCount);
+      setIsSubmissionsLoading(true);
+      const expectedSubmissionCount = getSubmissionCount(taskWithKnownSubmissionCount);
+
+      const cachedSubmissions = submissionsCacheRef.current.get(taskId);
+      if (cachedSubmissions && (cachedSubmissions.length > 0 || expectedSubmissionCount === 0)) {
+        setSubmissions(cachedSubmissions);
+        setIsSubmissionsLoading(false);
+      }
 
       try {
-        const submissionData = await readJson<{ submissions?: Submission[] } | Submission[]>(await fetch(`/api/tasks/${taskId}/submissions`));
+        const submissionData = await readJson<{ submissions?: Submission[] } | Submission[]>(
+          await fetchWithTimeout(`/api/tasks/${taskId}/submissions`)
+        );
         if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
           return null;
         }
 
-        const nextSubmissions = Array.isArray(submissionData) ? submissionData : submissionData.submissions || [];
+        let nextSubmissions = Array.isArray(submissionData) ? submissionData : submissionData.submissions || [];
+        if (nextSubmissions.length > 0 || expectedSubmissionCount === 0) {
+          submissionsCacheRef.current.set(taskId, nextSubmissions);
+        }
         setSubmissions(nextSubmissions);
-        if (shouldMarkRead) {
-          markTaskSubmissionsRead(taskId, Math.max(getSubmissionCount(task), nextSubmissions.length));
+
+        if (expectedSubmissionCount > nextSubmissions.length) {
+          try {
+            const refreshedSubmissionData = await readJson<{ submissions?: Submission[] } | Submission[]>(
+              await fetchWithTimeout(`/api/tasks/${taskId}/submissions?refresh=1`)
+            );
+            if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
+              return null;
+            }
+
+            nextSubmissions = Array.isArray(refreshedSubmissionData) ? refreshedSubmissionData : refreshedSubmissionData.submissions || [];
+            if (nextSubmissions.length > 0 || expectedSubmissionCount === 0) {
+              submissionsCacheRef.current.set(taskId, nextSubmissions);
+            }
+            setSubmissions(nextSubmissions);
+          } catch {
+            if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
+              return null;
+            }
+          }
+        }
+
+        if (shouldMarkRead && (nextSubmissions.length > 0 || expectedSubmissionCount === 0)) {
+          markTaskSubmissionsRead(taskId, Math.max(expectedSubmissionCount, nextSubmissions.length));
+        }
+
+        if (detailRequestSeqRef.current === requestSeq && selectedTaskIdRef.current === taskId) {
+          setIsSubmissionsLoading(false);
+        }
+
+        if (nextSubmissions.length > 0) {
+          try {
+            const submissionsWithAttachmentsData = await readJson<{ submissions?: Submission[] } | Submission[]>(
+              await fetchWithTimeout(`/api/tasks/${taskId}/submissions?includeAttachments=1`)
+            );
+            if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
+              return null;
+            }
+
+            const submissionsWithAttachments = Array.isArray(submissionsWithAttachmentsData)
+              ? submissionsWithAttachmentsData
+              : submissionsWithAttachmentsData.submissions || [];
+            submissionsCacheRef.current.set(taskId, submissionsWithAttachments);
+            setSubmissions(submissionsWithAttachments);
+          } catch {
+            if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
+              return null;
+            }
+          }
         }
       } catch {
         if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
           return null;
         }
-
-        setSubmissions([]);
-        if (shouldMarkRead) {
-          markTaskSubmissionsRead(taskId, getSubmissionCount(task));
+      } finally {
+        if (detailRequestSeqRef.current === requestSeq && selectedTaskIdRef.current === taskId) {
+          setIsSubmissionsLoading(false);
         }
       }
 
       setAutoRefreshError(null);
       setLastDetailLoadedAt(formatRefreshTime());
-      return task;
+      return taskWithKnownSubmissionCount;
     } catch (detailError) {
       if (detailRequestSeqRef.current !== requestSeq || selectedTaskIdRef.current !== taskId) {
         return null;
       }
 
-      setError(detailError instanceof Error ? detailError.message : "订单详情读取失败");
       const fallbackTask =
         tasks.find((task) => task.taskId === taskId) ||
         (selectedTask?.taskId === taskId ? selectedTask : null);
-      setSelectedTask(fallbackTask);
+      const detailErrorMessage = getRequestErrorMessage(detailError, "订单详情读取失败");
+      if (!options.suppressError && !fallbackTask) {
+        setError(detailErrorMessage);
+      }
+      setSelectedTask((currentTask) => fallbackTask || (currentTask?.taskId === taskId ? currentTask : null));
       setSubmissions([]);
+      setIsSubmissionsLoading(false);
       return null;
     } finally {
       if (detailRequestSeqRef.current === requestSeq && selectedTaskIdRef.current === taskId) {
@@ -1865,6 +2175,52 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
   }
 
+  async function confirmPaymentSuccessNotice() {
+    setIsPaymentSuccessNoticeOpen(false);
+
+    const taskId = selectedTask?.taskId || pendingPaymentTaskId || selectedTaskId;
+    if (!taskId) {
+      return;
+    }
+
+    clearPaymentConfirmation(taskId);
+    updateSelectedTask(taskId);
+    await Promise.all([loadTasks(), loadTaskDetail(taskId, { showLoading: false, markRead: false })]);
+  }
+
+  async function refreshPaymentConfirmationStatus() {
+    const taskId = selectedTask?.taskId || pendingPaymentTaskId;
+    if (!taskId) {
+      return;
+    }
+
+    setIsRefreshingPayment(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const latestTask = await loadTaskDetail(taskId, { showLoading: false, markRead: false, suppressError: true });
+      if (!latestTask) {
+        notePaymentConfirmationFailure(taskId);
+        return;
+      }
+
+      if (latestTask.status !== "PENDING_PAYMENT") {
+        await loadTasks();
+        mergeTaskIntoList(latestTask);
+        clearPaymentConfirmation(taskId);
+        if (latestTask.status === "ACTIVE") {
+          setIsPaymentSuccessNoticeOpen(true);
+        }
+        return;
+      }
+
+      notePaymentConfirmationFailure(taskId);
+    } finally {
+      setIsRefreshingPayment(false);
+    }
+  }
+
   async function reopenPaymentForSelectedTask() {
     if (!selectedTask || selectedTask.status !== "PENDING_PAYMENT") {
       return;
@@ -1893,8 +2249,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         throw new Error("付款页面暂时没有打开，请稍后重试。");
       }
 
-      setPendingPaymentTaskId(selectedTask.taskId);
-      window.sessionStorage.setItem(PENDING_PAYMENT_TASK_STORAGE_KEY, selectedTask.taskId);
+      startPaymentConfirmation(selectedTask.taskId);
 
       if (paymentWindow) {
         paymentWindow.location.href = nextPaymentUrl;
@@ -1998,7 +2353,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     await fetch("/api/auth/logout", {
       method: "POST"
     });
-    window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
+    clearPaymentConfirmation();
     detailRequestSeqRef.current += 1;
     selectedTaskIdRef.current = null;
     shouldPublishAfterLoginRef.current = false;
@@ -2008,7 +2363,6 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     updateSelectedTask(null);
     setSelectedTask(null);
     setSubmissions([]);
-    setPendingPaymentTaskId(null);
     setPaymentLinkIssuedAtByTaskId({});
     setIsPaymentSuccessNoticeOpen(false);
     setIsLoginOpen(false);
@@ -2165,12 +2519,11 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
         throw new Error("任务已创建，但付款页面暂时没有打开，请稍后刷新页面重试。");
       }
 
-      window.sessionStorage.setItem(PENDING_PAYMENT_TASK_STORAGE_KEY, task.taskId);
       setPaymentLinkIssuedAtByTaskId((current) => ({ ...current, [task.taskId]: Date.now() }));
       updateSelectedTask(task.taskId);
       setSelectedTask({ ...task, paymentUrl });
       setSubmissions([]);
-      setPendingPaymentTaskId(task.taskId);
+      startPaymentConfirmation(task.taskId);
       setMessage(null);
       setDescription("");
       setAttachments([]);
@@ -2193,8 +2546,9 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   useEffect(() => {
     loadCurrentUser();
     loadConfigHealth();
-    loadTasks();
-    loadPlatformActivity();
+    if (!marketPreview) {
+      loadPlatformActivity();
+    }
   }, []);
 
   useEffect(() => {
@@ -2218,7 +2572,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   }, [selectedTaskId]);
 
   useEffect(() => {
-    if (!marketPreview || selectedTaskId) {
+    if (!activeMarketPreview || selectedTaskId) {
       setIsCompactComposerVisible(false);
       setIsCompactComposerExpanded(false);
       return;
@@ -2256,7 +2610,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       window.removeEventListener("scroll", scheduleUpdate);
       scroller?.removeEventListener("scroll", scheduleUpdate);
     };
-  }, [marketPreview, selectedTaskId, syncCompactComposerVisibility]);
+  }, [activeMarketPreview, selectedTaskId, syncCompactComposerVisibility]);
 
   useEffect(() => {
     if (!isCompactComposerExpanded) {
@@ -2347,8 +2701,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
       return;
     }
 
-    window.sessionStorage.removeItem(PENDING_PAYMENT_TASK_STORAGE_KEY);
-    setPendingPaymentTaskId(null);
+    clearPaymentConfirmation(selectedTask.taskId);
     setPaymentLinkIssuedAtByTaskId((current) => {
       const { [selectedTask.taskId]: _removed, ...rest } = current;
       return rest;
@@ -2386,14 +2739,23 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
 
       paymentPollInFlightRef.current = true;
       try {
-        const latestTask = await loadTaskDetail(taskId, { showLoading: false, markRead: false });
-        if (!latestTask || cancelled) {
+        const latestTask = await loadTaskDetail(taskId, { showLoading: false, markRead: false, suppressError: pendingPaymentTaskId === taskId });
+        if (cancelled) {
+          return;
+        }
+
+        if (!latestTask) {
+          if (pendingPaymentTaskId === taskId) {
+            notePaymentConfirmationFailure(taskId);
+          }
+          timer = window.setTimeout(pollPaymentStatus, getPaymentPollDelay(issuedAt));
           return;
         }
 
         if (latestTask.status !== "PENDING_PAYMENT") {
           await loadTasks();
           mergeTaskIntoList(latestTask);
+          clearPaymentConfirmation(taskId);
           if (latestTask.status === "ACTIVE") {
             setIsPaymentSuccessNoticeOpen(true);
           }
@@ -2433,7 +2795,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
     }
 
     updateSelectedTask(pendingTaskId);
-    setPendingPaymentTaskId(pendingTaskId);
+    startPaymentConfirmation(pendingTaskId);
   }, [hasResolvedInitialRoute, isPhoneLoggedIn, selectedTaskId]);
 
   useEffect(() => {
@@ -2497,7 +2859,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
   return (
     <main
       className={`studio-shell ${!selectedTaskId ? "home-active" : "detail-active"} ${
-        marketPreview ? "market-preview-active" : ""
+        activeMarketPreview ? "market-preview-active" : ""
       } ${!isAuthLoading && !isPhoneLoggedIn ? "visitor-active" : ""} ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}
     >
       <button
@@ -2539,7 +2901,9 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
           </>
         }
         confirmLabel="知道了"
-        onConfirm={() => setIsPaymentSuccessNoticeOpen(false)}
+        onConfirm={() => {
+          void confirmPaymentSuccessNotice();
+        }}
       />
 
       {isMenuOpen ? <button className="drawer-backdrop" aria-label="关闭菜单" type="button" onClick={() => setIsMenuOpen(false)} /> : null}
@@ -2589,7 +2953,14 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
           </button>
         </nav>
 
-        {shouldShowSidebarOrders ? (
+        {shouldShowSidebarLoading ? (
+          <section className="sidebar-orders" aria-live="polite">
+            <div className="sidebar-section-toggle">
+              <span className="sidebar-label">历史任务</span>
+            </div>
+            <div className="sidebar-empty">读取中...</div>
+          </section>
+        ) : shouldShowSidebarOrders ? (
           <section className="sidebar-orders" ref={filterMenuRef}>
             <button className="sidebar-section-toggle" type="button" onClick={() => setIsFilterOpen((open) => !open)}>
               <span className="sidebar-label">历史任务</span>
@@ -2644,6 +3015,13 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                   </button>
                 ))}
             </div>
+          </section>
+        ) : shouldShowSidebarEmpty ? (
+          <section className="sidebar-orders">
+            <div className="sidebar-section-toggle">
+              <span className="sidebar-label">历史任务</span>
+            </div>
+            <div className="sidebar-empty">暂无历史任务</div>
           </section>
         ) : (
           <div className="sidebar-orders-placeholder" aria-hidden="true" />
@@ -2920,18 +3298,14 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                       <div className="task-card-controls">
                         <div
                           className={`attachment-control-group ${isAttachmentTooltipSuppressed ? "is-tooltip-suppressed" : ""}`}
-                          onMouseLeave={() => setIsAttachmentTooltipSuppressed(false)}
-                          onBlur={(event) => {
-                            if (!event.currentTarget.contains(event.relatedTarget)) {
-                              setIsAttachmentTooltipSuppressed(false);
-                            }
-                          }}
+                          onMouseEnter={() => setIsAttachmentTooltipSuppressed(false)}
                         >
                           <label
                             className="attachment-control"
                             htmlFor="attachments"
                             aria-label="上传附件"
                             aria-describedby={ATTACHMENT_RULE_TOOLTIP_ID}
+                            onMouseDown={() => setIsAttachmentTooltipSuppressed(true)}
                             onClick={(event) => {
                               setIsAttachmentTooltipSuppressed(true);
                               if (!isPhoneLoggedIn) {
@@ -3027,14 +3401,20 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                   ) : null}
                 </div>
 
-                {marketPreview ? null : (
+                {activeMarketPreview ? null : (
                   <PlatformActivityPanel activity={platformActivity} isLoading={isPlatformActivityLoading} isPaused={shouldPausePlatformActivity} />
                 )}
               </div>
             </section>
 
-            {marketPreview ? (
-              <MarketHomePreviewPanel feed={marketPreview.feed} summary={marketPreview.summary} />
+            {activeMarketPreview ? (
+              <MarketHomePreviewPanel
+                feed={activeMarketPreview.feed}
+                summary={activeMarketPreview.summary}
+                isPending={activeMarketPreview.isPending}
+                isFeedPending={activeMarketPreview.isFeedPending}
+                isSummaryPending={activeMarketPreview.isSummaryPending}
+              />
             ) : (
               <section className="case-section studio-cases">
                 <div className="case-grid">
@@ -3060,7 +3440,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                   </div>
                 ) : selectedTask ? (
                   <div className="detail-stack">
-                    {error ? <div className="message error detail-error-message">{error}</div> : null}
+                    {error && !isPaymentConfirmationActive ? <div className="message error detail-error-message">{error}</div> : null}
 
                     {isSyncableTaskStatus(selectedTask.status) ? (
                       <div className="detail-floating-bar">
@@ -3166,21 +3546,49 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                       ) : null}
 
                       {selectedTask.status === "PENDING_PAYMENT" ? (
-                        <div className={`payment-status-panel ${isSelectedPaymentLinkExpired ? "expired" : ""}`} role="status">
+                        <div
+                          className={`payment-status-panel ${isSelectedPaymentLinkExpired ? "expired" : ""} ${
+                            isPaymentConfirmationActive ? "confirming" : ""
+                          }`}
+                          role="status"
+                        >
                           <div className="payment-status-copy">
                             <strong>
-                              {isSelectedPaymentLinkExpired ? "支付已超时" : "等待付款完成"}
-                              {selectedPaymentCountdownText ? <span>{selectedPaymentCountdownText}</span> : null}
+                              {isPaymentConfirmationActive
+                                ? isPaymentConfirmationSlow
+                                  ? "正在努力确认结果"
+                                  : "正在确认付款结果"
+                                : isSelectedPaymentLinkExpired
+                                  ? "支付已超时"
+                                  : "等待付款完成"}
+                              {!isPaymentConfirmationActive && selectedPaymentCountdownText ? <span>{selectedPaymentCountdownText}</span> : null}
                             </strong>
                             <p>
-                              {isSelectedPaymentLinkExpired
-                                ? "支付链接已超时，请重新支付。"
-                                : "付款完成后，将自动更新任务状态。如付款失败，可重新支付。"}
+                              {isPaymentConfirmationActive
+                                ? isPaymentConfirmationSlow
+                                  ? "如果长时间未同步，您也可以手动刷新状态。"
+                                  : "正在同步支付状态，请稍后。"
+                                : isSelectedPaymentLinkExpired
+                                  ? "支付链接已超时，请重新支付。"
+                                  : "付款完成后，将自动更新任务状态。如付款失败，可重新支付。"}
                             </p>
                           </div>
-                          <button className="payment-status-action" type="button" onClick={reopenPaymentForSelectedTask} disabled={isRefreshingPayment}>
-                            {isRefreshingPayment ? "处理中" : "重新支付"}
-                          </button>
+                          {isPaymentConfirmationActive ? (
+                            isPaymentConfirmationSlow ? (
+                              <button
+                                className="payment-status-action secondary"
+                                type="button"
+                                onClick={refreshPaymentConfirmationStatus}
+                                disabled={isRefreshingPayment}
+                              >
+                                {isRefreshingPayment ? "刷新中" : "刷新状态"}
+                              </button>
+                            ) : null
+                          ) : (
+                            <button className="payment-status-action" type="button" onClick={reopenPaymentForSelectedTask} disabled={isRefreshingPayment}>
+                              {isRefreshingPayment ? "处理中" : "重新支付"}
+                            </button>
+                          )}
                         </div>
                       ) : null}
                     </div>
@@ -3189,7 +3597,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                       <div className="detail-header">
                         <div className="submission-heading">
                           <h3>收到投稿</h3>
-                          <span className="submission-count-text">{submissions.length} 条</span>
+                          <span className="submission-count-text">{submissionCountText}</span>
                         </div>
                         <div className="header-actions">
                           <span className={`chip submission-status-chip status-${selectedTask.status.toLowerCase().replace(/_/g, "-")}`}>
@@ -3288,7 +3696,11 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
                       ) : (
                         <div className="empty-state submission-empty-state">
                           <span className="submission-empty-mark" aria-hidden="true" />
-                          <span>{getEmptySubmissionText(selectedTask.status, selectedTask.submissionCount || 0)}</span>
+                          <span>
+                            {isSubmissionsLoading
+                              ? "正在读取投稿..."
+                              : getEmptySubmissionText(selectedTask.status, selectedTask.submissionCount || 0)}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -3302,7 +3714,7 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
             </section>
         )}
       </section>
-      {marketPreview && !selectedTaskId && isCompactComposerVisible ? (
+      {SHOW_COMPACT_PUBLISH_BAR && activeMarketPreview && !selectedTaskId && isCompactComposerVisible ? (
         <form
           ref={compactComposerFormRef}
           className="compact-publish-bar"
@@ -3310,19 +3722,8 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
             event.preventDefault();
             focusHomeComposer();
           }}
-          onFocusCapture={(event) => {
-            if ((event.target as HTMLElement).closest('.compact-attachment-control, input[type="file"]')) {
-              return;
-            }
-            focusHomeComposer();
-          }}
-          onMouseDownCapture={(event) => {
-            if ((event.target as HTMLElement).closest('.compact-attachment-control, input[type="file"]')) {
-              return;
-            }
-            event.preventDefault();
-            focusHomeComposer();
-          }}
+          onClick={activateCompactComposer}
+          onFocusCapture={activateCompactComposer}
           noValidate
         >
           <label
@@ -3375,10 +3776,11 @@ export function OrderConsole({ marketPreview }: { marketPreview?: MarketHomePrev
             className={`compact-publish-field${description.trim() ? "" : " is-placeholder"}`}
             aria-label="快速发布任务说明"
             disabled={isCreating}
+            onClick={focusHomeComposer}
           >
             {description.trim() || (usesShortCompactPrompt ? "点击立即开始..." : "也想发一个需求任务？点击立即开始...")}
           </button>
-          <button className="compact-publish-button" type="submit" disabled={isPublishDisabled}>
+          <button className="compact-publish-button" type="button" disabled={isCreating} onClick={focusHomeComposer}>
             {isCreating ? "发布中" : "发布任务 →"}
           </button>
         </form>

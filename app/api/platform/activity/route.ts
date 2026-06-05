@@ -3,9 +3,13 @@ import { getErrorMessage } from "@/lib/errors";
 import { getMarketActivitySummary, syncMarketActivityIfStale } from "@/lib/market-activity";
 import { recordOperationLog } from "@/lib/operation-log";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    await syncMarketActivityIfStale();
+    const { searchParams } = new URL(request.url);
+    if (searchParams.get("sync") !== "0") {
+      await syncMarketActivityIfStale();
+    }
+
     const summary = await getMarketActivitySummary();
     return NextResponse.json(summary);
   } catch (error) {

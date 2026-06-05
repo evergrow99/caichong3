@@ -14,7 +14,7 @@ export function StaticMarketNav({ active }: StaticMarketNavProps) {
       </Link>
       <nav className="market-nav" aria-label="页面导航">
         <Link href="/" className="market-nav-link">
-          发任务
+          发布任务
         </Link>
         {active === "market" ? (
           <Link href="/market" className="market-nav-link active">

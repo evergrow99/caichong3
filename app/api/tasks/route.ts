@@ -4,6 +4,7 @@ import { getTaskService } from "@/lib/task-service";
 import {
   createFromCaichongTask,
   isOrderRepositoryEnabled,
+  listPageByUser,
   listByUser,
   mapLocalOrderToTask,
   updateFromCaichongTask
@@ -55,14 +56,29 @@ async function refreshUserOrders(localOrders: Awaited<ReturnType<typeof listByUs
 export async function GET(request: Request) {
   try {
     const user = await getCurrentUser();
-    await ensureUserProfile(user);
-    const taskService = await getTaskService(user);
     const { searchParams } = new URL(request.url);
     const page = Number(searchParams.get("page") || 1);
     const pageSize = Number(searchParams.get("pageSize") || 20);
+    const shouldRefresh = searchParams.get("refresh") === "1";
 
-    const localOrders = await listByUser(user);
     if (isOrderRepositoryEnabled()) {
+      const taskService = await getTaskService(user);
+      if (!shouldRefresh) {
+        const { orders, total } = await listPageByUser(user, page, pageSize);
+
+        return NextResponse.json({
+          tasks: orders.map(mapLocalOrderToTask),
+          total,
+          page,
+          pageSize,
+          totalPages: Math.max(1, Math.ceil(total / pageSize)),
+          accountMode: taskService.account.mode,
+          accountLabel: taskService.account.label,
+          source: "supabase"
+        });
+      }
+
+      const localOrders = await listByUser(user);
       const syncedOrders = await refreshUserOrders(localOrders, taskService);
       const start = (page - 1) * pageSize;
       const tasks = syncedOrders.slice(start, start + pageSize).map(mapLocalOrderToTask);
@@ -79,6 +95,7 @@ export async function GET(request: Request) {
       });
     }
 
+    const taskService = await getTaskService(user);
     const data = await taskService.service.listTasks({ page, pageSize });
     return NextResponse.json({
       ...data,
