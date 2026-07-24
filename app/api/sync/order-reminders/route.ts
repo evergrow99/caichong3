@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getErrorMessage } from "@/lib/errors";
 import { syncPlatformHeartbeat } from "@/lib/heartbeat-sync";
 import { syncOrderSmsReminders } from "@/lib/order-reminders";
@@ -27,24 +27,14 @@ function authorizeCron(request: Request) {
   return null;
 }
 
-export async function GET(request: Request) {
-  const unauthorized = authorizeCron(request);
-  if (unauthorized) return unauthorized;
-
-  let heartbeat:
-    | Awaited<ReturnType<typeof syncPlatformHeartbeat>>
-    | {
-        ok: false;
-        error: string;
-      };
-
+async function syncPlatformHeartbeatAfterResponse() {
   try {
-    heartbeat = await syncPlatformHeartbeat();
+    const heartbeat = await syncPlatformHeartbeat();
     if (!heartbeat.ok) {
       await recordOperationLog({
         scope: "order.sms_reminder.heartbeat",
         level: "warn",
-        message: "平台心跳部分失败，已继续执行本地短信提醒兜底",
+        message: "平台心跳部分失败，本地短信提醒已在响应前完成",
         details: {
           route: "GET /api/sync/order-reminders",
           eventSyncError: heartbeat.eventSyncError,
@@ -54,11 +44,7 @@ export async function GET(request: Request) {
       });
     }
   } catch (error) {
-    const message = getErrorMessage(error, "平台心跳同步失败，已继续执行本地短信提醒兜底");
-    heartbeat = {
-      ok: false,
-      error: message
-    };
+    const message = getErrorMessage(error, "平台心跳同步失败");
     await recordOperationLog({
       scope: "order.sms_reminder.heartbeat",
       level: "error",
@@ -68,13 +54,20 @@ export async function GET(request: Request) {
       }
     });
   }
+}
+
+export async function GET(request: Request) {
+  const unauthorized = authorizeCron(request);
+  if (unauthorized) return unauthorized;
+
+  after(syncPlatformHeartbeatAfterResponse);
 
   try {
     const reminders = await syncOrderSmsReminders();
 
     return NextResponse.json({
-      ok: reminders.ok && !("ok" in heartbeat && heartbeat.ok === false),
-      heartbeat,
+      ok: reminders.ok,
+      heartbeat: "scheduled",
       reminders
     });
   } catch (error) {
